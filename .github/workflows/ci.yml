@@ -15,8 +15,8 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
@@ -48,8 +48,8 @@ jobs:
     env:
       RDSOPS_TEST_DSN: host=localhost user=postgres password=ci dbname=postgres
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Preload pg_stat_statements
@@ -78,7 +78,7 @@ jobs:
           - terraform/examples/minimal
           - terraform/examples/govcloud
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: hashicorp/setup-terraform@v3
       - name: fmt
         run: terraform fmt -check -recursive terraform
@@ -91,7 +91,7 @@ jobs:
   lint-and-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: terraform-linters/setup-tflint@v4
       - name: tflint
         working-directory: terraform
@@ -100,7 +100,7 @@ jobs:
         run: |
           tflint --init --config "$PWD/.tflint.hcl"
           tflint --recursive --config "$PWD/.tflint.hcl"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: checkov

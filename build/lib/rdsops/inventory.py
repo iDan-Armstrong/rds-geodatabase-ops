@@ -84,8 +84,17 @@ def posture_findings(facts: InstanceFacts, *, production: bool = False) -> list[
     out: list[Finding] = []
     gap = Severity.FAIL if production else Severity.WARN
 
-    def add(code: str, ok: bool, bad: Severity, title: str, detail: str = "", **ev):
-        out.append(Finding(code, Severity.OK if ok else bad, title, "" if ok else detail, ev))
+    def add(code: str, ok: bool, bad: Severity, title: tuple[str, str], detail: str = "", **ev):
+        """title is (when ok, when not ok), so the line always states what is true."""
+        out.append(
+            Finding(
+                code,
+                Severity.OK if ok else bad,
+                title[0] if ok else title[1],
+                "" if ok else detail,
+                ev,
+            )
+        )
 
     if facts.engine != "postgres":
         out.append(
@@ -101,7 +110,7 @@ def posture_findings(facts: InstanceFacts, *, production: bool = False) -> list[
         "INV001",
         facts.storage_encrypted,
         Severity.FAIL,
-        "Storage encrypted at rest",
+        ("Storage encrypted at rest", "Storage is NOT encrypted at rest"),
         "Encryption cannot be turned on in place: snapshot, copy with a KMS key, restore.",
         kms_key_id=facts.kms_key_id,
     )
@@ -109,21 +118,24 @@ def posture_findings(facts: InstanceFacts, *, production: bool = False) -> list[
         "INV002",
         not facts.publicly_accessible,
         Severity.FAIL,
-        "No public endpoint",
+        ("No public endpoint", "Instance is publicly accessible"),
         "ArcGIS clients belong in the same VPC; a public endpoint is never required.",
     )
     add(
         "INV003",
         facts.deletion_protection,
         gap,
-        "Deletion protection on",
+        ("Deletion protection on", "Deletion protection is off"),
         "Turn on with modify-db-instance --deletion-protection.",
     )
     add(
         "INV004",
         facts.backup_retention_days >= 7,
         gap,
-        f"Backup retention {facts.backup_retention_days} day(s) (baseline 7+)",
+        (
+            f"Backup retention {facts.backup_retention_days} days",
+            f"Backup retention {facts.backup_retention_days} day(s), below the 7-day baseline",
+        ),
         "Retention also bounds how far back point-in-time restore can go.",
         backup_retention_days=facts.backup_retention_days,
     )
@@ -131,21 +143,21 @@ def posture_findings(facts: InstanceFacts, *, production: bool = False) -> list[
         "INV005",
         facts.iam_auth,
         Severity.WARN,
-        "IAM database authentication available",
+        ("IAM database authentication available", "IAM database authentication is off"),
         "Lets admins and automation connect with short-lived tokens instead of stored passwords.",
     )
     add(
         "INV006",
         facts.multi_az,
         gap if production else Severity.INFO,
-        "Multi-AZ standby",
+        ("Multi-AZ standby", "Single-AZ: no standby"),
         "Single AZ: an AZ outage or host failure means a restore, not a failover.",
     )
     add(
         "INV007",
         facts.performance_insights,
         Severity.INFO,
-        "Performance Insights on",
+        ("Performance Insights on", "Performance Insights is off"),
         "rdsops health reads top waits from Performance Insights when it is available.",
     )
 

@@ -66,5 +66,5 @@ Checked 2026-11-04. Each one is re-checked before a release that depends on it.
 | v0.1 | Repo, Terraform module and examples, `inventory`, CI green |
 | v0.2 | `health` and `maintenance` with PostGIS-in-Docker tests |
 | v0.3 | `compat` and `upgrade-plan` |
-| v0.4 | `restore-drill` (moto plus optional live mode) |
+| v0.4 | `restore-drill` (moto plus optional live mode). Released 2026-11-04 |
 | v0.5 | Runbooks, geodatabase checks, demo script |

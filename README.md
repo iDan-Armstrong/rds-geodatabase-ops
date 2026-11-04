@@ -12,8 +12,8 @@ covers how the database is designed. This repo covers how it is run: what the ba
 is, how you know the live instance still matches it, and how you prove a restore or an
 upgrade will work before you need it.
 
-**Status:** v0.3. The Terraform module and `rdsops inventory`, `health`,
-`maintenance`, `compat` and `upgrade-plan` are done.
+**Status:** v0.4. The Terraform module and `rdsops inventory`, `health`,
+`maintenance`, `compat`, `upgrade-plan` and `restore-drill` are done.
 [docs/SCOPE.md](docs/SCOPE.md) lists what comes next and the facts it is built on.
 
 ## What to look at first
@@ -163,6 +163,30 @@ password in Secrets Manager, is not supported by blue/green.
 [ADR 0005](docs/adr/0005-managed-master-secret-vs-blue-green.md) keeps the secure
 default and has the runbook switch it off for the window only. The full reasoning per
 step is in [docs/runbooks/major-upgrade-blue-green.md](docs/runbooks/major-upgrade-blue-green.md).
+
+### restore-drill
+
+Restores the instance to a throwaway copy, times how long until the copy is usable,
+connects and verifies the data, and deletes the copy. Without `--execute` it only
+prints the plan, so the default is free and read-only.
+
+```
+restore-drill  egdb-lab  mode pitr
+
+  [ok  ] DRL010  Restore completed in 14.0 min
+  [ok  ] DRL011  Time to a usable copy: 21.0 min (target 60)
+  [ok  ] DRL012  Restore point 5 min before the drill started (target 15)
+  [ok  ] DRL013  Verify: PostGIS present
+  [ok  ] DRL013  Verify: gis.parcels rows
+  [ok  ] DRL014  Copy egdb-lab-drill-202611041800 deleted
+```
+
+(Output from the mocked test drill; timings come from a fake clock there.)
+
+The copy is private, single-AZ and has deletion protection turned off. Without that,
+RDS copies deletion protection from the source and the cleanup fails. Cleanup deletes
+only an instance tagged `rdsops-drill=true` that is not the source. See
+[docs/runbooks/restore-drill.md](docs/runbooks/restore-drill.md).
 
 ## How it is tested
 

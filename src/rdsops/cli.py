@@ -178,6 +178,82 @@ def cmd_upgrade_plan(args) -> int:
     return code
 
 
+def cmd_restore_drill(args) -> int:
+    from datetime import UTC, datetime
+
+    from . import drill
+    from .findings import Severity
+
+    def now():
+        return datetime.now(UTC)
+
+    rds = session(args.region, args.profile).client("rds")
+    req = drill.DrillRequest(
+        source=args.instance,
+        mode=args.mode,
+        restore_time=datetime.fromisoformat(args.restore_time.replace("Z", "+00:00"))
+        if args.restore_time
+        else None,
+        snapshot_id=args.snapshot,
+        target_id=args.target,
+        instance_class=args.instance_class,
+        rto_minutes=args.rto_minutes,
+        rpo_minutes=args.rpo_minutes,
+        verify_tables=args.verify_table or [],
+        keep=args.keep,
+    )
+    facts = drill.gather_backup_facts(rds, args.instance)
+    findings, steps = drill.plan(req, facts, now())
+    header = [
+        f"restore-drill  {args.instance}  mode {args.mode}"
+        + ("" if args.execute else "  (plan only; add --execute to run it)")
+    ]
+
+    if not args.execute or any(f.severity == Severity.FAIL for f in findings):
+        if args.json:
+            return emit(args, header, findings, {"steps": steps, "executed": False})
+        code = emit(args, header, findings, {})
+        print("\n  Steps")
+        for n, step in enumerate(steps, 1):
+            print(f"  {n}. {step}")
+        if args.execute:
+            print("\n  Not running: the plan has failures.")
+        return code
+
+    verifier = None
+    if args.user or args.secret_arn or args.dsn:
+        from .db import ConnectOptions, connect
+
+        def verifier(host):
+            opts = ConnectOptions(
+                host=host,
+                port=args.port,
+                user=args.user,
+                dbname=args.dbname,
+                iam=args.iam,
+                secret_arn=args.secret_arn,
+                sslmode=args.sslmode,
+            )
+            aws = session(args.region, args.profile) if (args.iam or args.secret_arn) else None
+            with connect(opts, aws) as conn:
+                return drill.verify_restored(conn, req.verify_tables)
+
+    log = (lambda m: None) if args.json else (lambda m: print(f"  .. {m}"))
+    result = drill.run(rds, req, facts, now=now, verifier=verifier, log=log)
+    findings = drill.evaluate(result, req)
+    if args.report:
+        import json as _json
+
+        with open(args.report, "a", encoding="utf-8") as fh:
+            fh.write(
+                _json.dumps(
+                    {"result": result.to_dict(), "findings": [f.to_dict() for f in findings]}
+                )
+                + "\n"
+            )
+    return emit(args, header, findings, {"result": result.to_dict()})
+
+
 # ------------------------------------------------------------------- parser
 
 
@@ -253,6 +329,32 @@ def build_parser() -> argparse.ArgumentParser:
     _aws_args(up)
     _output_args(up)
     up.set_defaults(func=cmd_upgrade_plan)
+    dr = sub.add_parser(
+        "restore-drill", help="Restore to a throwaway copy, time it, verify it, delete it"
+    )
+    dr.add_argument("--instance", required=True, help="Source DB instance identifier")
+    dr.add_argument("--mode", choices=["pitr", "snapshot"], default="pitr")
+    dr.add_argument(
+        "--restore-time",
+        help="pitr: ISO time, e.g. 2026-11-04T13:00:00Z (default latest restorable)",
+    )
+    dr.add_argument("--snapshot", help="snapshot: identifier (default newest)")
+    dr.add_argument("--target", help="Identifier for the copy (default <source>-drill-<time>)")
+    dr.add_argument("--instance-class", help="Class for the copy (default same as source)")
+    dr.add_argument("--rto-minutes", type=float, default=60.0)
+    dr.add_argument("--rpo-minutes", type=float, default=15.0)
+    dr.add_argument("--verify-table", action="append", help="schema.table to count rows in")
+    dr.add_argument("--keep", action="store_true", help="Do not delete the copy afterwards")
+    dr.add_argument("--report", help="Append the result as a JSON line to this file")
+    dr.add_argument(
+        "--execute",
+        action="store_true",
+        help="Actually run the drill. Without it, only the plan is printed.",
+    )
+    _db_args(dr)
+    _aws_args(dr)
+    _output_args(dr)
+    dr.set_defaults(func=cmd_restore_drill)
     return p
 
 

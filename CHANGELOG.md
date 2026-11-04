@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 (2026-11-04)
+
+- `rdsops restore-drill`: point-in-time or snapshot restore to a throwaway copy, timed,
+  verified over SQL (PostGIS, geodatabase, row counts), then deleted. Plan only unless
+  `--execute`. Findings against RTO and RPO targets, and a JSON-lines report for audit.
+- The copy is created without deletion protection, and cleanup turns it off if any path
+  copied it; cleanup refuses to delete the source or anything without the drill tag.
+- Runbook: restore drill, including the IAM permissions it needs.
+- CI actions moved to their Node 24 majors (checkout v5, setup-python v6).
+
 ## 0.3.0 (2026-11-04)
 
 - `rdsops compat`: engine and PostGIS versions against a dated, sourced copy of the Esri
