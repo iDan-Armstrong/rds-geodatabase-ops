@@ -12,7 +12,8 @@ covers how the database is designed. This repo covers how it is run: what the ba
 is, how you know the live instance still matches it, and how you prove a restore or an
 upgrade will work before you need it.
 
-**Status:** v0.1. The Terraform module and `rdsops inventory` are done.
+**Status:** v0.2. The Terraform module and `rdsops inventory`, `health` and
+`maintenance` are done.
 [docs/SCOPE.md](docs/SCOPE.md) lists what comes next and the facts it is built on.
 
 ## What to look at first
@@ -82,11 +83,59 @@ egdb-lab  postgres 17.7  db.t4g.micro  [available]
 Every check returns `Finding` objects and never prints or exits. The CLI renders them.
 That is what makes each check a unit-testable function.
 
+### health and maintenance
+
+These two connect to the database and read catalogs. The connection is opened
+read-only with a 60-second statement timeout; the checks tell you what to run and
+never run it themselves.
+
+```bash
+# IAM token (nothing stored), RDS-managed secret, or a plain connection string
+rdsops health --host egdb-lab.xxxx.us-east-1.rds.amazonaws.com --user ops --dbname egdb --iam --instance egdb-lab
+rdsops maintenance --secret-arn arn:aws:secretsmanager:...:secret:rds!db-... --host ... --dbname egdb
+RDSOPS_DSN="host=localhost dbname=egdb" rdsops maintenance --quiet
+```
+
+| Code | `health` checks | Code | `maintenance` checks |
+| --- | --- | --- | --- |
+| HLT001 | connections against usable slots | MNT001 | dead rows (ratio and count), with a compress hint for sde state and lineage tables |
+| HLT002 | long-running queries | MNT002 | statistics never or not recently analyzed |
+| HLT003 | sessions idle in transaction | MNT003 | large indexes never scanned, downgraded while stats are young |
+| HLT004 | sessions waiting on locks | MNT004 | duplicate index definitions |
+| HLT005 | transaction ID wraparound age | MNT005 | invalid indexes left by a failed concurrent build |
+| HLT006 | replication slots: inactive or holding WAL | MNT006 | geometry or geography columns with no spatial index |
+| HLT007 | cache hit ratio | | |
+| HLT008 | top queries from `pg_stat_statements` | | |
+| HLT009 | PostGIS present and its version | | |
+| HLT010 | free storage from CloudWatch (with `--instance`) | | |
+
+`maintenance` against a test schema with problems seeded on purpose (PostgreSQL 16,
+PostGIS 3.4):
+
+```
+maintenance  3 tables checked, statistics 0.0 days old
+
+  [WARN] MNT001  sewer.manholes: 40,000 dead rows (33%)
+               Last vacuum: never. Run VACUUM (ANALYZE) sewer.manholes; if this recurs,
+               lower autovacuum_vacuum_scale_factor for the table.
+  [WARN] MNT002  sewer.manholes: statistics stale (never analyzed)
+  [ok  ] MNT003  No large unused indexes (3 small ones under 8.0 MiB not listed)
+  [WARN] MNT004  Duplicate indexes on sewer.manholes: manholes_fid_idx, manholes_fid_idx2
+               Identical definitions. Keep one and DROP INDEX CONCURRENTLY the others
+               (wasted: 3.5 MiB).
+  [ok  ] MNT005  No invalid indexes
+  [WARN] MNT006  sewer.manholes.shape (geometry) has no spatial index
+               About 120,000 rows. Every map draw and spatial query on this column is a
+               full scan. CREATE INDEX CONCURRENTLY ON sewer.manholes USING GIST (shape);
+               or Add Spatial Index in ArcGIS for registered data.
+```
+
 ## How it is tested
 
 | Layer | How | Where |
 | --- | --- | --- |
 | AWS API calls | moto, with fake credentials forced for every test | `tests/` |
+| SQL checks | thresholds unit-tested on snapshots; then problems seeded into real PostGIS 16 and 17 (dead rows, duplicate and invalid indexes, a missing spatial index, a held lock) and each one must be found | `tests/integration/`, CI `postgis` job |
 | Python | ruff and pytest on 3.11, 3.12, 3.13 | CI `python` job |
 | Terraform | `fmt`, `validate` for the module and both examples | CI `terraform` job |
 | Terraform policy | tflint with the AWS ruleset, checkov | CI `lint-and-scan` job |
@@ -120,7 +169,8 @@ terraform/modules/egdb-postgres   the module
 terraform/examples/minimal        cheapest working stack, disposable
 terraform/examples/govcloud       production-shaped, aws-us-gov partition
 src/rdsops/                       CLI and checks
-tests/                            moto-backed tests
+tests/                            unit tests (moto for AWS)
+tests/integration/                tests against a real PostGIS
 docs/SCOPE.md                     agreed scope, dated sources, release plan
 docs/adr/                         decisions
 ```

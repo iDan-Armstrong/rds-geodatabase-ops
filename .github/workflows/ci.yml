@@ -28,6 +28,47 @@ jobs:
       - name: Tests (moto; no AWS account, no credentials)
         run: pytest
 
+  postgis:
+    # The SQL checks run against a real server. pg_stat_statements has to be preloaded,
+    # which service containers cannot pass as a startup flag, so the job sets it with
+    # ALTER SYSTEM and restarts the container before the tests run.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: ["postgis/postgis:16-3.4", "postgis/postgis:17-3.5"]
+    services:
+      postgis:
+        image: ${{ matrix.image }}
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      RDSOPS_TEST_DSN: host=localhost user=postgres password=ci dbname=postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Preload pg_stat_statements
+        run: |
+          psql "$RDSOPS_TEST_DSN" -c "ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements'"
+          docker restart ${{ job.services.postgis.id }}
+          for i in $(seq 1 30); do pg_isready -h localhost -U postgres && break; sleep 2; done
+          psql "$RDSOPS_TEST_DSN" -c "SHOW shared_preload_libraries"
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Integration tests (seeded problems in a real PostGIS)
+        run: pytest -m pg -rs
+      - name: rdsops against the CI database
+        env:
+          RDSOPS_DSN: ${{ env.RDSOPS_TEST_DSN }}
+        run: |
+          rdsops health || test $? -eq 1
+          rdsops maintenance || test $? -eq 1
+
   terraform:
     runs-on: ubuntu-latest
     strategy:

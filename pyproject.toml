@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rdsops"
-version = "0.1.0"
+version = "0.2.0"
 description = "Operations tooling for an ArcGIS enterprise geodatabase on Amazon RDS for PostgreSQL"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Daniel Armstrong" }]
 requires-python = ">=3.11"
-dependencies = ["boto3>=1.34"]
+dependencies = ["boto3>=1.34", "psycopg[binary]>=3.1"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "moto[rds]>=5.0", "ruff>=0.6"]
+dev = ["pytest>=8", "moto[rds,secretsmanager,cloudwatch]>=5.0", "ruff>=0.6"]
 
 [project.scripts]
 rdsops = "rdsops.cli:main"
@@ -24,6 +24,8 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["pg: needs a PostgreSQL/PostGIS server (set RDSOPS_TEST_DSN)"]
+filterwarnings = ["ignore::DeprecationWarning:botocore.*"]
 
 [tool.ruff]
 line-length = 100

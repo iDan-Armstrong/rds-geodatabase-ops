@@ -1,6 +1,18 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.2.0 (2026-11-04)
+
+- `rdsops health`: connections, long queries, idle-in-transaction sessions, lock waits,
+  wraparound age, replication slots, cache hit ratio, top queries, PostGIS version, and
+  free storage from CloudWatch with `--instance`.
+- `rdsops maintenance`: dead rows, stale statistics, unused, duplicate and invalid
+  indexes, and spatial columns without a spatial index.
+- Connections by IAM auth token, Secrets Manager secret, or connection string; always
+  read-only. No password options.
+- `--quiet` hides passing checks.
+- CI: integration tests against PostGIS 16 and 17 with problems seeded on purpose.
+
+## 0.1.0 (2026-11-04)
 
 - Terraform module `egdb-postgres`: KMS encryption, TLS required, IAM auth, RDS-managed
   master secret, pgaudit and pg_stat_statements, CloudWatch alarms, required tags.
