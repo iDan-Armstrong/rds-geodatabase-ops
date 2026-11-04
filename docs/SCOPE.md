@@ -23,6 +23,9 @@ Checked 2026-11-04. Each one is re-checked before a release that depends on it.
 | ArcGIS connections to a cloud database must come from machines in the same cloud; cross-region and on-premises connections perform poorly | Esri: databases in the cloud (above) |
 | Blue/green deployments minimize downtime for major upgrades, but are not available from older minors (15.3 and lower, 14.8 and lower, and so on) | [AWS: blue/green replication methods](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/blue-green-deployments-replication-type.html) |
 | PostGIS major upgrades need a manual `ALTER EXTENSION ... UPDATE` after the engine upgrade | [AWS: upgrading the PostgreSQL engine](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_UpgradeDBInstance.PostgreSQL.html) |
+| Blue/green does not support Secrets Manager-managed master passwords; major-version blue/green uses logical replication, which does not replicate DDL or large objects and blocks UPDATE/DELETE on tables without a primary key | [AWS: blue/green limitations](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/blue-green-deployments-considerations.html) |
+| Major-version blue/green needs `rds.logical_replication = 1` and `max_replication_slots` above the database count; existing logical slots cancel it | [AWS re:Post: blue/green errors](https://repost.aws/knowledge-center/rds-postgresql-blue-green-deployment-error) |
+| ArcGIS 12.0 / Pro 3.6 supports RDS for PostgreSQL 14.18, 15.13, 16.9, 17.5; 11.5 / Pro 3.5 supports 13.20, 14.17, 15.12, 16.8 with PostGIS 3.5.3 and later blocked | [Esri 12.0](https://enterprise.arcgis.com/en/system-requirements/12.0/linux/databases-in-the-cloud.htm), [Esri 11.5](https://enterprise.arcgis.com/en/system-requirements/11.5/linux/databases-in-the-cloud.htm) |
 
 ## In scope
 

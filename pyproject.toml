@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rdsops"
-version = "0.2.0"
+version = "0.3.0"
 description = "Operations tooling for an ArcGIS enterprise geodatabase on Amazon RDS for PostgreSQL"
 readme = "README.md"
 license = { text = "MIT" }
@@ -20,6 +20,9 @@ rdsops = "rdsops.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"rdsops.data" = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

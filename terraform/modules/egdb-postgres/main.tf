@@ -127,6 +127,11 @@ resource "aws_db_parameter_group" "this" {
     value = tostring(var.work_mem_kb)
   }
   parameter {
+    name         = "rds.logical_replication"
+    value        = var.logical_replication ? "1" : "0"
+    apply_method = "pending-reboot"
+  }
+  parameter {
     name  = "random_page_cost"
     value = "1.1" # gp3 SSD; the 4.0 default steers the planner away from spatial indexes
   }

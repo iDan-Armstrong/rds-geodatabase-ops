@@ -33,6 +33,7 @@ class InstanceFacts:
     ca_cert: str | None
     allocated_storage_gb: int
     max_allocated_storage_gb: int | None
+    managed_master_secret: bool = False
 
     @property
     def engine_major(self) -> int:
@@ -70,6 +71,7 @@ def describe_instance(rds, identifier: str) -> InstanceFacts:
         ca_cert=db.get("CACertificateIdentifier"),
         allocated_storage_gb=int(db.get("AllocatedStorage", 0)),
         max_allocated_storage_gb=db.get("MaxAllocatedStorage"),
+        managed_master_secret=bool(db.get("MasterUserSecret")),
     )
 
 

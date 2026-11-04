@@ -12,8 +12,8 @@ covers how the database is designed. This repo covers how it is run: what the ba
 is, how you know the live instance still matches it, and how you prove a restore or an
 upgrade will work before you need it.
 
-**Status:** v0.2. The Terraform module and `rdsops inventory`, `health` and
-`maintenance` are done.
+**Status:** v0.3. The Terraform module and `rdsops inventory`, `health`,
+`maintenance`, `compat` and `upgrade-plan` are done.
 [docs/SCOPE.md](docs/SCOPE.md) lists what comes next and the facts it is built on.
 
 ## What to look at first
@@ -37,6 +37,7 @@ upgrade will work before you need it.
 | Auditing | pgaudit (`ddl,role`), connection logging, slow-query log to CloudWatch | who changed schema or privileges, and when |
 | Query stats | `pg_stat_statements` preloaded | what `rdsops health` reads (v0.2) |
 | Minor upgrades | manual, gated by the Esri support matrix | [ADR 0004](docs/adr/0004-minor-upgrades-are-gated.md) |
+| Logical replication | off; `logical_replication = true` for a blue/green major upgrade | extra WAL is only worth it during an upgrade |
 | Alarms | CPU, free storage, freeable memory, connections | the four that take a geodatabase down |
 | Tags | `Owner`, `Environment`, `DataClassification` required | variable validation fails the plan without them |
 
@@ -134,6 +135,35 @@ maintenance  3 tables checked, statistics 0.0 days old
                or Add Spatial Index in ArcGIS for registered data.
 ```
 
+### compat and upgrade-plan
+
+`compat` checks an engine and PostGIS version against a dated copy of Esri's support
+matrix ([`src/rdsops/data/esri_rds_postgresql.json`](src/rdsops/data/esri_rds_postgresql.json)),
+including the PostGIS versions Esri blocks for issue 5978. Every entry carries its source
+URL and check date, and the check warns when the data is more than 120 days old.
+
+```
+compat  RDS for PostgreSQL 16.4, PostGIS 3.5.3  vs ArcGIS 12.1
+
+  [FAIL] CMP002  RDS 16.4 is below the certified minimum 16.11
+  [FAIL] CMP003  PostGIS 3.5.3 is not supported by ArcGIS Enterprise 12.1 / Pro 3.7
+               PostGIS issue 5978: SRID creation and spatial data creation fail or are
+               malformed in enterprise geodatabases.
+```
+
+`upgrade-plan` reads the instance (and, if you connect, the database) and lists what has
+to be true before an engine upgrade, then prints the runbook in order. For a major
+upgrade it checks the blue/green preconditions AWS documents: source minor floor,
+logical replication settings, existing slots, tables without a primary key, large
+objects, unlogged tables, and extensions that must be turned off. Anything it cannot see
+is reported as "not checked" rather than guessed.
+
+One finding is worth calling out: the module's own default, an RDS-managed master
+password in Secrets Manager, is not supported by blue/green.
+[ADR 0005](docs/adr/0005-managed-master-secret-vs-blue-green.md) keeps the secure
+default and has the runbook switch it off for the window only. The full reasoning per
+step is in [docs/runbooks/major-upgrade-blue-green.md](docs/runbooks/major-upgrade-blue-green.md).
+
 ## How it is tested
 
 | Layer | How | Where |
@@ -141,6 +171,7 @@ maintenance  3 tables checked, statistics 0.0 days old
 | AWS API calls | moto, with fake credentials forced for every test | `tests/` |
 | SQL checks | thresholds unit-tested on snapshots; then problems seeded into real PostGIS 16 and 17 (dead rows, duplicate and invalid indexes, a missing spatial index, a held lock) and each one must be found | `tests/integration/`, CI `postgis` job |
 | Python | ruff and pytest on 3.11, 3.12, 3.13 | CI `python` job |
+| Portability | check modules must import with boto3 and psycopg blocked ([ADR 0006](docs/adr/0006-checks-are-pure-functions-over-snapshots.md)) | `tests/test_portable.py` |
 | Terraform | `fmt`, `validate` for the module and both examples | CI `terraform` job |
 | Terraform policy | tflint with the AWS ruleset, checkov | CI `lint-and-scan` job |
 

@@ -121,6 +121,12 @@ variable "ca_cert_identifier" {
   default     = "rds-ca-rsa2048-g1"
 }
 
+variable "logical_replication" {
+  description = "Set rds.logical_replication = 1. Needed only for a blue/green major version upgrade (or DMS); it raises WAL volume, so leave it off otherwise. Changing it needs a reboot."
+  type        = bool
+  default     = false
+}
+
 variable "work_mem_kb" {
   description = "work_mem in KB. Spatial joins and sorts benefit from more than the engine default."
   type        = number

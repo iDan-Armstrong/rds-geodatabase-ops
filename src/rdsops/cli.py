@@ -113,6 +113,71 @@ def cmd_maintenance(args) -> int:
     return emit(args, header, findings, {"stats_age_days": snap.stats_age_days})
 
 
+def _db_requested(args) -> bool:
+    import os
+
+    return bool(args.dsn or args.host or args.secret_arn or os.environ.get("RDSOPS_DSN"))
+
+
+def cmd_compat(args) -> int:
+    from . import compat
+
+    engine, postgis = args.engine_version, args.postgis
+    if args.instance:
+        rds = session(args.region, args.profile).client("rds")
+        db = rds.describe_db_instances(DBInstanceIdentifier=args.instance)["DBInstances"][0]
+        engine = db["EngineVersion"]
+    if _db_requested(args):
+        with _connect(args) as conn:
+            row = conn.execute(
+                "SELECT extversion FROM pg_extension WHERE extname = 'postgis'"
+            ).fetchone()
+            postgis = postgis or (row["extversion"] if row else None)
+    if not engine:
+        raise SystemExit("rdsops compat: give --engine-version or --instance")
+    findings = compat.check(engine, args.arcgis, postgis)
+    header = [
+        f"compat  RDS for PostgreSQL {engine}"
+        + (f", PostGIS {postgis}" if postgis else "")
+        + f"  vs ArcGIS {args.arcgis}"
+    ]
+    return emit(
+        args,
+        header,
+        findings,
+        {"engine_version": engine, "postgis": postgis, "arcgis": args.arcgis},
+    )
+
+
+def cmd_upgrade_plan(args) -> int:
+    from . import upgrade
+
+    ctx = upgrade.UpgradeContext(
+        current_version=args.current or "0", target_version=args.target, arcgis=args.arcgis
+    )
+    if args.instance:
+        rds = session(args.region, args.profile).client("rds")
+        upgrade.context_from_aws(rds, args.instance, ctx)
+    elif not args.current:
+        raise SystemExit("rdsops upgrade-plan: give --instance or --current")
+    if _db_requested(args):
+        with _connect(args) as conn:
+            upgrade.context_from_db(conn, ctx)
+    result = upgrade.plan(ctx)
+    header = [
+        f"upgrade-plan  {result.kind} upgrade {ctx.current_version} -> "
+        f"{ctx.target_version} for ArcGIS {ctx.arcgis}"
+    ]
+    if args.json:
+        return emit(args, header, result.findings, {"kind": result.kind, "steps": result.steps})
+    code = emit(args, header, result.findings, {})
+    if result.steps:
+        print("\n  Runbook")
+        for n, step in enumerate(result.steps, 1):
+            print(f"  {n:>2}. {step}")
+    return code
+
+
 # ------------------------------------------------------------------- parser
 
 
@@ -169,6 +234,25 @@ def build_parser() -> argparse.ArgumentParser:
     _aws_args(mt)
     _output_args(mt)
     mt.set_defaults(func=cmd_maintenance)
+    cp = sub.add_parser("compat", help="Engine and PostGIS versions against the Esri matrix")
+    cp.add_argument("--arcgis", required=True, help="Enterprise version (12.1) or pro3.7")
+    cp.add_argument("--engine-version", help="RDS engine version, e.g. 17.7")
+    cp.add_argument("--postgis", help="PostGIS version, e.g. 3.5.2")
+    cp.add_argument("--instance", help="Read the engine version from this instance")
+    _db_args(cp)
+    _aws_args(cp)
+    _output_args(cp)
+    cp.set_defaults(func=cmd_compat)
+
+    up = sub.add_parser("upgrade-plan", help="Preflight and runbook for an engine upgrade")
+    up.add_argument("--target", required=True, help="Target engine version, e.g. 18.1")
+    up.add_argument("--arcgis", required=True, help="Enterprise version (12.1) or pro3.7")
+    up.add_argument("--instance", help="Read version, secret and parameters from this instance")
+    up.add_argument("--current", help="Current engine version (offline planning)")
+    _db_args(up)
+    _aws_args(up)
+    _output_args(up)
+    up.set_defaults(func=cmd_upgrade_plan)
     return p
 
 
