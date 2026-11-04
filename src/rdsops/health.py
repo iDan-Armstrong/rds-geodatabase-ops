@@ -383,13 +383,46 @@ def evaluate(s: HealthSnapshot, t: Thresholds = DEFAULTS) -> list[Finding]:
     return out
 
 
+def storage_evaluate(
+    free_bytes: int | None, allocated_gb: int, max_allocated_gb: int | None = None
+) -> list[Finding]:
+    """Pure part of the storage check: free bytes against allocated storage."""
+    if free_bytes is None:
+        return [
+            Finding(
+                "HLT010",
+                Severity.WARN,
+                "No FreeStorageSpace data in the last 30 minutes",
+                "Check the instance is running and CloudWatch access is allowed.",
+            )
+        ]
+    allocated = int(allocated_gb) * (1 << 30)
+    pct = 100.0 * free_bytes / allocated
+    autoscale = (
+        f", autoscaling to {max_allocated_gb} GB"
+        if max_allocated_gb
+        else ", no storage autoscaling"
+    )
+    sev = Severity.FAIL if pct < 5 else Severity.WARN if pct < 15 else Severity.OK
+    return [
+        Finding(
+            "HLT010",
+            sev,
+            f"Free storage {_gib(free_bytes)} of {_gib(allocated)} ({pct:.0f}%){autoscale}",
+            ""
+            if sev == Severity.OK
+            else "A full volume stops all writes. Look for retained WAL (slots), bloat and old "
+            "logs before adding storage, which cannot be shrunk later.",
+            {"free_bytes": free_bytes, "allocated_bytes": allocated},
+        )
+    ]
+
+
 def storage_findings(cloudwatch, rds, identifier: str) -> list[Finding]:
-    """Free storage from CloudWatch against allocated storage from the RDS API."""
+    """Gather free storage from CloudWatch and allocated storage from RDS, then evaluate."""
     from datetime import UTC, datetime, timedelta
 
     db = rds.describe_db_instances(DBInstanceIdentifier=identifier)["DBInstances"][0]
-    allocated = int(db["AllocatedStorage"]) * (1 << 30)
-    ceiling = db.get("MaxAllocatedStorage")
     end = datetime.now(UTC) + timedelta(minutes=1)
     result = cloudwatch.get_metric_data(
         MetricDataQueries=[
@@ -410,28 +443,8 @@ def storage_findings(cloudwatch, rds, identifier: str) -> list[Finding]:
         EndTime=end,
     )["MetricDataResults"]
     points = result[0]["Values"] if result else []
-    if not points:
-        return [
-            Finding(
-                "HLT010",
-                Severity.WARN,
-                "No FreeStorageSpace data in the last 30 minutes",
-                "Check the instance is running and CloudWatch access is allowed.",
-            )
-        ]
-    free = int(min(points))
-    pct = 100.0 * free / allocated
-    autoscale = f", autoscaling to {ceiling} GB" if ceiling else ", no storage autoscaling"
-    sev = Severity.FAIL if pct < 5 else Severity.WARN if pct < 15 else Severity.OK
-    return [
-        Finding(
-            "HLT010",
-            sev,
-            f"Free storage {_gib(free)} of {_gib(allocated)} ({pct:.0f}%){autoscale}",
-            ""
-            if sev == Severity.OK
-            else "A full volume stops all writes. Look for retained WAL (slots), bloat and old "
-            "logs before adding storage, which cannot be shrunk later.",
-            {"free_bytes": free, "allocated_bytes": allocated},
-        )
-    ]
+    return storage_evaluate(
+        int(min(points)) if points else None,
+        int(db["AllocatedStorage"]),
+        db.get("MaxAllocatedStorage"),
+    )

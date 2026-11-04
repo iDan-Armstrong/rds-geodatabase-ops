@@ -7,7 +7,7 @@ from conftest import make_instance
 from moto import mock_aws
 
 from rdsops.findings import Severity
-from rdsops.health import storage_findings
+from rdsops.health import storage_evaluate, storage_findings
 
 
 def run(free_bytes):
@@ -39,3 +39,11 @@ def test_storage_bands():
 
 def test_missing_metric_warns():
     assert run(None).severity == Severity.WARN
+
+
+def test_storage_evaluate_is_pure():
+    gib = 1 << 30
+    assert storage_evaluate(50 * gib, 100)[0].severity == Severity.OK
+    assert storage_evaluate(4 * gib, 100, 200)[0].severity == Severity.FAIL
+    assert "autoscaling to 200 GB" in storage_evaluate(4 * gib, 100, 200)[0].title
+    assert storage_evaluate(None, 100)[0].severity == Severity.WARN
