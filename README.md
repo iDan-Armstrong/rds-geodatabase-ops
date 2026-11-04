@@ -46,6 +46,10 @@ and 35-day retention.
 
 ## rdsops
 
+On Windows, double-click `rdsops-launcher.bat`. The first run builds a private Python
+environment in `.venv`; after that it opens a menu (console, offline test suite, update).
+Elsewhere:
+
 ```bash
 pip install -e ".[dev]"
 rdsops inventory --instance egdb-lab --profile lab
