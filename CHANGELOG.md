@@ -12,6 +12,9 @@
 - Terraform: `logical_replication` variable (default off).
 - ADR 0005 (managed master secret vs blue/green), ADR 0006 (checks are pure functions).
 - Runbook: major engine upgrade with RDS blue/green.
+- Inventory titles now state what is true when a check fails ("Deletion protection is
+  off", not "Deletion protection on" next to a WARN). Found while building the SIMServo
+  training game on top of these checks.
 - Test that every check module imports without boto3 or psycopg; the free-storage
   check is split into a pure `storage_evaluate` and a CloudWatch wrapper.
 

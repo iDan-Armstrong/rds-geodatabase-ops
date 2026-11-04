@@ -65,10 +65,10 @@ egdb-lab  postgres 17.7  db.t4g.micro  [available]
   [ok  ] INV001  Storage encrypted at rest
   [ok  ] INV002  No public endpoint
   [ok  ] INV003  Deletion protection on
-  [WARN] INV004  Backup retention 1 day(s) (baseline 7+)
+  [WARN] INV004  Backup retention 1 day(s), below the 7-day baseline
                Retention also bounds how far back point-in-time restore can go.
   [ok  ] INV005  IAM database authentication available
-  [info] INV006  Multi-AZ standby
+  [info] INV006  Single-AZ: no standby
                Single AZ: an AZ outage or host failure means a restore, not a failover.
   ...
   [WARN] INV009  Using a default parameter group
