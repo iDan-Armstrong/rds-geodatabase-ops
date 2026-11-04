@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Tests (moto; no AWS account, no credentials)
+        run: pytest
+
+  terraform:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dir:
+          - terraform/modules/egdb-postgres
+          - terraform/examples/minimal
+          - terraform/examples/govcloud
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: fmt
+        run: terraform fmt -check -recursive terraform
+      - name: validate
+        working-directory: ${{ matrix.dir }}
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+  lint-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: terraform-linters/setup-tflint@v4
+      - name: tflint
+        working-directory: terraform
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tflint --init --config "$PWD/.tflint.hcl"
+          tflint --recursive --config "$PWD/.tflint.hcl"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: checkov
+        run: |
+          pip install checkov
+          # Production-shaped example: only the inline, justified skips in the module apply.
+          checkov -d terraform/examples/govcloud --framework terraform --compact --quiet
+          # Lab example turns off Multi-AZ, deletion protection and Enhanced Monitoring
+          # on purpose to keep a drill cheap and disposable. Those three are skipped here only.
+          checkov -d terraform/examples/minimal --framework terraform --compact --quiet \
+            --skip-check CKV_AWS_157,CKV_AWS_293,CKV_AWS_118
