@@ -173,15 +173,19 @@ prints the plan, so the default is free and read-only.
 ```
 restore-drill  egdb-lab  mode pitr
 
-  [ok  ] DRL010  Restore completed in 14.0 min
-  [ok  ] DRL011  Time to a usable copy: 21.0 min (target 60)
+  [ok  ] DRL010  Restore completed in 16.0 min
+  [ok  ] DRL011  Time to a usable copy: 20.0 min (target 60)
   [ok  ] DRL012  Restore point 5 min before the drill started (target 15)
+  [ok  ] DRL013  Verify: connect
   [ok  ] DRL013  Verify: PostGIS present
+               PostGIS 3.5.2
   [ok  ] DRL013  Verify: gis.parcels rows
+               210,000 rows
   [ok  ] DRL014  Copy egdb-lab-drill-202611041800 deleted
 ```
 
-(Output from the mocked test drill; timings come from a fake clock there.)
+(Output from a drill against mocked RDS with a stepped clock and stub verification checks, so the
+minutes are illustrative. Real timings depend on database size and instance class.)
 
 The copy is private, single-AZ and has deletion protection turned off. Without that,
 RDS copies deletion protection from the source and the cleanup fails. Cleanup deletes

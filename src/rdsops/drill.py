@@ -179,7 +179,7 @@ def plan(req: DrillRequest, facts: BackupFacts, now: datetime) -> tuple[list[Fin
             )
 
     if restore_point:
-        rpo = (now - restore_point).total_seconds() / 60
+        rpo = max(0.0, (now - restore_point).total_seconds() / 60)  # clock skew is not data
         sev = Severity.OK if rpo <= req.rpo_minutes else Severity.WARN
         out.append(
             Finding(
@@ -278,7 +278,7 @@ def evaluate(result: DrillResult, req: DrillRequest) -> list[Finding]:
         )
 
     if result.restore_point:
-        rpo = (result.started - result.restore_point).total_seconds() / 60
+        rpo = max(0.0, (result.started - result.restore_point).total_seconds() / 60)
         sev = Severity.OK if rpo <= req.rpo_minutes else Severity.WARN
         out.append(
             Finding(

@@ -218,3 +218,9 @@ def test_delete_guard_refuses_source_and_untagged(rds):
     with pytest.raises(RuntimeError, match="not tagged"):
         drill._delete_copy(rds, "not-a-drill", "egdb-lab")
     assert len(rds.describe_db_instances()["DBInstances"]) == 2
+
+
+def test_restore_point_after_start_is_not_negative_data_loss():
+    r = result(restore_point=NOW + timedelta(minutes=3))  # clock skew between hosts
+    rpo = next(x for x in drill.evaluate(r, DrillRequest("egdb")) if x.code == "DRL012")
+    assert rpo.evidence["rpo_minutes"] == 0.0
