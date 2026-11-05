@@ -4,7 +4,17 @@
 import subprocess
 import sys
 
-PURE = ["findings", "inventory", "health", "maintenance", "compat", "upgrade", "drill", "aurora"]
+PURE = [
+    "findings",
+    "inventory",
+    "health",
+    "maintenance",
+    "compat",
+    "upgrade",
+    "drill",
+    "aurora",
+    "fleet",
+]
 
 
 def test_check_modules_do_not_import_aws_or_database_drivers():

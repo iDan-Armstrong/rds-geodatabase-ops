@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 (2026-11-04)
+
+- `rdsops fleet`: every RDS for PostgreSQL instance across Regions (`REGION@PROFILE` for
+  GovCloud or other accounts), optionally filtered by tag. Per instance, the inventory
+  posture check and the Esri compat check against its `arcgis-release` tag;
+  `environment=prod` makes availability gaps failures. Fleet findings for minor-version
+  drift, mixed ArcGIS releases and untagged instances. A Region that cannot be read is a
+  finding, not a crash.
+- `inventory.facts_from_api` shared by inventory and fleet.
+
 ## 0.5.0 (2026-11-04)
 
 - `rdsops aurora-plan`: plan the move from RDS for PostgreSQL to Aurora PostgreSQL. Picks

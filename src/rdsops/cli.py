@@ -178,6 +178,35 @@ def cmd_upgrade_plan(args) -> int:
     return code
 
 
+def parse_targets(values: list[str], profile: str | None) -> list[tuple[str, str | None]]:
+    """'us-gov-west-1@gov' -> ('us-gov-west-1', 'gov'); a bare Region uses --profile."""
+    out = []
+    for v in values:
+        region, _, prof = v.partition("@")
+        out.append((region, prof or profile))
+    return out
+
+
+def cmd_fleet(args) -> int:
+    from . import fleet
+
+    if not args.region:
+        raise SystemExit("rdsops fleet: give at least one --region (REGION or REGION@PROFILE)")
+    tag = tuple(args.tag.split("=", 1)) if args.tag else None
+    clients = [
+        (region, session(region, prof).client("rds"))
+        for region, prof in parse_targets(args.region, args.profile)
+    ]
+    snap = fleet.gather(clients, tag=tag, default_arcgis=args.arcgis)
+    findings = fleet.evaluate(snap)
+    header = [
+        f"fleet  {', '.join(snap.regions)}"
+        + (f"  tag {args.tag}" if args.tag else "")
+        + (f"  default ArcGIS {args.arcgis}" if args.arcgis else "")
+    ]
+    return emit(args, header, findings, {"instances": [m.name for m in snap.members]})
+
+
 def cmd_aurora_plan(args) -> int:
     from . import aurora
 
@@ -377,6 +406,18 @@ def build_parser() -> argparse.ArgumentParser:
     _aws_args(cp)
     _output_args(cp)
     cp.set_defaults(func=cmd_compat)
+
+    fl = sub.add_parser("fleet", help="Every geodatabase instance across Regions, in one view")
+    fl.add_argument(
+        "--region",
+        action="append",
+        help="Region to read, repeatable; REGION@PROFILE to use another profile (GovCloud)",
+    )
+    fl.add_argument("--profile", help="Profile for Regions given without one")
+    fl.add_argument("--tag", help="Only instances with this tag, KEY=VALUE")
+    fl.add_argument("--arcgis", help="ArcGIS release for instances without an arcgis-release tag")
+    _output_args(fl)
+    fl.set_defaults(func=cmd_fleet)
 
     au = sub.add_parser("aurora-plan", help="Preflight and runbook for moving to Aurora PostgreSQL")
     au.add_argument("--arcgis", required=True, help="Enterprise version (12.1) or pro3.7")

@@ -48,7 +48,11 @@ class InstanceFacts:
 def describe_instance(rds, identifier: str) -> InstanceFacts:
     """Read one instance from the RDS API into a flat, typed record."""
     resp = rds.describe_db_instances(DBInstanceIdentifier=identifier)
-    db = resp["DBInstances"][0]
+    return facts_from_api(resp["DBInstances"][0])
+
+
+def facts_from_api(db: dict) -> InstanceFacts:
+    """One DescribeDBInstances entry as InstanceFacts. Shared by inventory and fleet."""
     endpoint = db.get("Endpoint") or {}
     return InstanceFacts(
         identifier=db["DBInstanceIdentifier"],

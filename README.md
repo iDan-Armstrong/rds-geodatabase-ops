@@ -12,8 +12,9 @@ covers how the database is designed. This repo covers how it is run: what the ba
 is, how you know the live instance still matches it, and how you prove a restore or an
 upgrade will work before you need it.
 
-**Status:** v0.5. The Terraform module and `rdsops inventory`, `health`,
-`maintenance`, `compat`, `upgrade-plan`, `restore-drill` and `aurora-plan` are done.
+**Status:** v0.6. The Terraform module and `rdsops inventory`, `health`,
+`maintenance`, `compat`, `upgrade-plan`, `restore-drill`, `aurora-plan` and `fleet` are
+done.
 [docs/SCOPE.md](docs/SCOPE.md) lists what comes next and the facts it is built on.
 
 ## What to look at first
@@ -248,6 +249,45 @@ both come from AWS.)
 
 `rdsops compat --platform aurora` checks an Aurora version against Esri's Aurora list,
 which is not the RDS list: for 12.1 it stops at Aurora 17.6, with no 18.
+
+### fleet
+
+One view of every geodatabase instance across Regions and accounts. Each instance gets
+the same posture check as `inventory` and the same Esri check as `compat`, against the
+release in its `arcgis-release` tag; an `environment=prod` tag makes availability gaps
+failures. Then what only shows across many: minor-version drift, mixed ArcGIS releases,
+and instances nobody tagged. GovCloud is another Region with its own profile.
+
+```bash
+rdsops fleet --region us-east-1 --region us-gov-west-1@gov --tag geodatabase=true --arcgis 12.1
+```
+
+```
+fleet  us-east-1, us-gov-west-1  tag geodatabase=true  default ArcGIS 12.1
+
+  [ok  ] FLT000  4 instance(s) in 2 Region(s): 0 clean, 1 with warnings, 3 failing
+  [WARN] FLT001  us-east-1/egdb-lab PostgreSQL 17.7: 0 FAIL, 1 WARN
+               INV009 Using a default parameter group
+  [FAIL] FLT001  us-east-1/parks-egdb PostgreSQL 17.5: 2 FAIL, 2 WARN
+               INV002 Instance is publicly accessible; CMP002 RDS 17.5 is below the certified minimum 17.7; INV004 Backup retention 1 day(s), below the 7-day baseline; INV009 Using a default parameter group
+  [FAIL] FLT001  us-gov-west-1/nwsa-egdb PostgreSQL 16.8: 1 FAIL, 1 WARN
+               INV006 Single-AZ: no standby; INV009 Using a default parameter group
+  [FAIL] FLT001  us-gov-west-1/nwsa-egdb-test PostgreSQL 16.6: 1 FAIL, 1 WARN
+               CMP002 RDS 16.6 is below the certified minimum 16.11; INV009 Using a default parameter group
+  [info] FLT002  PostgreSQL 16 runs on 2 minors: 16.6, 16.8
+               Patch to one certified minor so a fix tested on one instance holds on all.
+  [info] FLT002  PostgreSQL 17 runs on 2 minors: 17.5, 17.7
+               Patch to one certified minor so a fix tested on one instance holds on all.
+  [info] FLT002  Instances serve 2 ArcGIS releases: 11.5, 12.1
+               Each is checked against its own release.
+  [info] FLT003  1 instance(s) without an arcgis-release tag
+               Checked against --arcgis 12.1. us-gov-west-1/nwsa-egdb-test
+```
+
+(Four instances created in mocked AWS across us-east-1 and us-gov-west-1.)
+
+It needs `rds:DescribeDBInstances` in each account, nothing else. A Region it cannot
+read is reported and the rest still runs.
 
 ## How it is tested
 

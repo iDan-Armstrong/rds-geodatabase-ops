@@ -43,6 +43,9 @@ Checked 2026-11-04. Each one is re-checked before a release that depends on it.
    - `upgrade-plan`: blue/green preflight and the runbook steps it implies
    - `drift`: live parameters against the Terraform baseline
    - `restore-drill`: snapshot or point-in-time restore to a throwaway instance, timed and verified
+   - `aurora-plan`: preflight and runbook for moving to Aurora PostgreSQL (v0.5, ADR 0007)
+   - `fleet`: every instance across Regions and accounts, posture and compat per instance,
+     drift across them (v0.6)
 3. **Geodatabase checks**: sde state and lineage growth, compress and analyze cadence.
 4. **Runbooks** for restore, failover, credential rotation and upgrade; ADRs; a 5-minute
    demo script.
