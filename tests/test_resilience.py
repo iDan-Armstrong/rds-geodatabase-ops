@@ -100,6 +100,13 @@ def test_dr_region_prerequisites():
     assert by(f, "RES008")[0].severity == Severity.INFO
 
 
+def test_a_region_drill_times_the_region_restore_paths():
+    s = snap(measured_restore_minutes=None, measured_region_minutes=52.0)
+    f = resilience.evaluate(s, NOW, T)
+    region = [x for x in by(f, "RES004") if x.evidence["scenario"] == "region"][0]
+    assert region.evidence["rto_minutes"] == 52.0
+
+
 def test_measured_times_from_reports():
     lines = [
         json.dumps({"findings": [{"code": "DRL011", "evidence": {"rto_minutes": 38.5}}]}),

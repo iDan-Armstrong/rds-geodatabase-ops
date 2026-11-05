@@ -13,8 +13,9 @@ Two scenarios are scored:
 The recovery point of each path comes from timestamps AWS reports (latest restorable
 time, replica lag, snapshot age). Recovery time comes only from AWS's documented
 Multi-AZ figure or from your own measured drills (``rdsops restore-drill --report`` and
-``rdsops failover-drill --result``); where neither exists it is reported as unknown,
-never guessed. Sources are in docs/runbooks/disaster-recovery.md.
+``rdsops failover-drill --result``; a Region drill restores from the replicated backups
+or a copy, so its time applies to those paths). Where neither exists it is reported as
+unknown, never guessed. Sources are in docs/runbooks/disaster-recovery.md.
 
 ``gather`` reads the source Region and the DR Region; ``evaluate`` is pure.
 """
@@ -136,7 +137,7 @@ def paths(s: ResilienceSnapshot, now: datetime) -> list[Path]:
                 "region",
                 f"Replicated automated backups ({b.region})",
                 _age(b.latest_restorable, now),
-                s.measured_restore_minutes,
+                s.measured_region_minutes or s.measured_restore_minutes,
                 "Restore to a point in time in that Region, then repoint ArcGIS.",
             )
         )
@@ -148,7 +149,7 @@ def paths(s: ResilienceSnapshot, now: datetime) -> list[Path]:
                 "region",
                 f"Snapshot copy {newest.identifier} ({newest.region})",
                 _age(newest.created, now),
-                s.measured_restore_minutes,
+                s.measured_region_minutes or s.measured_restore_minutes,
                 "Restore the copy, then repoint ArcGIS. Everything after it is lost.",
             )
         )
