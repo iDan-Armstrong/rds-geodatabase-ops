@@ -135,9 +135,9 @@ def cmd_compat(args) -> int:
             postgis = postgis or (row["extversion"] if row else None)
     if not engine:
         raise SystemExit("rdsops compat: give --engine-version or --instance")
-    findings = compat.check(engine, args.arcgis, postgis)
+    findings = compat.check(engine, args.arcgis, postgis, platform=args.platform)
     header = [
-        f"compat  RDS for PostgreSQL {engine}"
+        f"compat  {'Aurora' if args.platform == 'aurora' else 'RDS for'} PostgreSQL {engine}"
         + (f", PostGIS {postgis}" if postgis else "")
         + f"  vs ArcGIS {args.arcgis}"
     ]
@@ -174,6 +174,58 @@ def cmd_upgrade_plan(args) -> int:
     if result.steps:
         print("\n  Runbook")
         for n, step in enumerate(result.steps, 1):
+            print(f"  {n:>2}. {step}")
+    return code
+
+
+def cmd_aurora_plan(args) -> int:
+    from . import aurora
+
+    if args.instance:
+        if not args.region:
+            raise SystemExit("rdsops aurora-plan: give --region with --instance")
+        s = session(args.region, args.profile)
+        facts = aurora.gather(s.client("rds"), s.client("cloudwatch"), args.instance, args.region)
+    elif args.engine_version and args.region:
+        facts = aurora.AuroraFacts(
+            source=args.source or "<instance>",
+            region=args.region,
+            engine_version=args.engine_version,
+            encrypted=None if args.encrypted is None else args.encrypted == "yes",
+        )
+    else:
+        raise SystemExit(
+            "rdsops aurora-plan: give --instance and --region, or --engine-version and "
+            "--region for offline planning"
+        )
+    facts.postgis_version = args.postgis or facts.postgis_version
+    if _db_requested(args):
+        with _connect(args) as conn:
+            row = conn.execute(
+                "SELECT extversion FROM pg_extension WHERE extname = 'postgis'"
+            ).fetchone()
+            facts.postgis_version = facts.postgis_version or (row["extversion"] if row else None)
+    req = aurora.AuroraRequest(
+        arcgis=args.arcgis,
+        method=args.method,
+        target_region=args.target_region,
+        cluster=args.cluster,
+        writer_class=args.writer_class,
+    )
+    findings, steps = aurora.plan(req, facts)
+    header = [
+        f"aurora-plan  {facts.source} (RDS for PostgreSQL {facts.engine_version}, "
+        f"{facts.region}, partition {aurora.partition(facts.region)})  {req.method} method  "
+        f"for ArcGIS {req.arcgis}"
+    ]
+    if args.json:
+        return emit(
+            args, header, findings, {"steps": steps, "partition": aurora.partition(facts.region)}
+        )
+    code = emit(args, header, findings, {})
+    if steps:
+        print("\n  Runbook")
+        for n, step in enumerate(steps, 1):
             print(f"  {n:>2}. {step}")
     return code
 
@@ -315,10 +367,32 @@ def build_parser() -> argparse.ArgumentParser:
     cp.add_argument("--engine-version", help="RDS engine version, e.g. 17.7")
     cp.add_argument("--postgis", help="PostGIS version, e.g. 3.5.2")
     cp.add_argument("--instance", help="Read the engine version from this instance")
+    cp.add_argument(
+        "--platform",
+        choices=["rds", "aurora"],
+        default="rds",
+        help="RDS for PostgreSQL (default) or Aurora PostgreSQL",
+    )
     _db_args(cp)
     _aws_args(cp)
     _output_args(cp)
     cp.set_defaults(func=cmd_compat)
+
+    au = sub.add_parser("aurora-plan", help="Preflight and runbook for moving to Aurora PostgreSQL")
+    au.add_argument("--arcgis", required=True, help="Enterprise version (12.1) or pro3.7")
+    au.add_argument("--instance", help="Read the source from this RDS instance")
+    au.add_argument("--method", choices=["replica", "snapshot"], default="replica")
+    au.add_argument("--target-region", help="Region for the cluster (snapshot method only)")
+    au.add_argument("--cluster", help="Cluster identifier (default: <instance>-aurora)")
+    au.add_argument("--writer-class", default="db.r6g.large")
+    au.add_argument("--postgis", help="PostGIS version, if not read from the database")
+    au.add_argument("--engine-version", help="Source engine version (offline planning)")
+    au.add_argument("--source", help="Source identifier (offline planning)")
+    au.add_argument("--encrypted", choices=["yes", "no"], help="Source encryption (offline)")
+    _db_args(au)
+    _aws_args(au)
+    _output_args(au)
+    au.set_defaults(func=cmd_aurora_plan)
 
     up = sub.add_parser("upgrade-plan", help="Preflight and runbook for an engine upgrade")
     up.add_argument("--target", required=True, help="Target engine version, e.g. 18.1")

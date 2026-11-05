@@ -58,7 +58,8 @@ def test_unsupported_major():
         ("12.1", "3.6.1", Severity.OK),  # only the listed versions are blocked in 12.x
         ("12.1", "3.5.2", Severity.OK),
         ("11.5", "3.5.3", Severity.FAIL),
-        ("11.5", "3.6.1", Severity.FAIL),  # 11.5 blocks 3.5.3 and everything after
+        ("11.5", "3.6.0", Severity.FAIL),
+        ("11.5", "3.6.1", Severity.OK),  # Esri's 11.5 page lists only 3.5.3 and 3.6.0
         ("11.5", "3.5.2", Severity.OK),
     ],
 )
@@ -71,3 +72,26 @@ def test_unknown_release_and_stale_data():
     assert check("17.7", "10.9.1", today=TODAY)[0].code == "CMP000"
     later = date(2027, 6, 1)
     assert sev(check("17.7", "12.1", today=later), "CMP004") == Severity.WARN
+
+
+def test_aurora_platform_uses_the_aurora_list():
+    ok = {f.code: f for f in check("17.6", "12.1", "3.5.2", today=TODAY, platform="aurora")}
+    assert ok["CMP001"].severity == Severity.OK and ok["CMP001"].title.startswith(
+        "Aurora PostgreSQL 17"
+    )
+    assert ok["CMP002"].title == "Aurora 17.6 is the certified minor"
+    low = {f.code: f for f in check("17.4", "12.1", None, today=TODAY, platform="aurora")}
+    assert low["CMP002"].severity == Severity.FAIL and "17.6" in low["CMP002"].title
+    # Esri lists no Aurora 18 for 12.1, though RDS 18.1 is listed
+    no18 = {f.code: f for f in check("18.1", "12.1", None, today=TODAY, platform="aurora")}
+    assert (
+        no18["CMP001"].severity == Severity.FAIL
+        and "14.19, 15.14, 16.10, 17.6" in no18["CMP001"].detail
+    )
+    assert {f.code: f for f in check("18.1", "12.1", None, today=TODAY)}[
+        "CMP001"
+    ].severity == Severity.OK
+    # 11.5 tops out at Aurora 16
+    assert {f.code: f for f in check("17.6", "11.5", None, today=TODAY, platform="aurora")}[
+        "CMP001"
+    ].severity == Severity.FAIL

@@ -1,6 +1,6 @@
 # 0002. Target RDS for PostgreSQL, not Aurora
 
-Status: accepted (2026-11-04)
+Status: accepted (2026-11-04); amended by [0007](0007-aurora-as-a-migration-target.md)
 
 ## Context
 

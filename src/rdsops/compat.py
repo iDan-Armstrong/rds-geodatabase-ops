@@ -41,6 +41,10 @@ class Release:
     postgis_blocked: list[str] = field(default_factory=list)
     postgis_blocked_from: str | None = None
     postgis_blocked_note: str = ""
+    aurora_postgresql: dict[str, str] = field(default_factory=dict)
+
+    def versions(self, platform: str = "rds") -> dict[str, str]:
+        return self.aurora_postgresql if platform == "aurora" else self.rds_postgresql
 
     def postgis_is_blocked(self, postgis: str) -> bool:
         pv = vtuple(postgis)
@@ -63,6 +67,7 @@ def load_matrix(text: str | None = None) -> list[Release]:
             postgis_blocked=r.get("postgis_blocked", []),
             postgis_blocked_from=r.get("postgis_blocked_from"),
             postgis_blocked_note=r.get("postgis_blocked_note", ""),
+            aurora_postgresql=r.get("aurora_postgresql", {}),
         )
         for r in raw
     ]
@@ -83,7 +88,9 @@ def check(
     postgis_version: str | None = None,
     matrix: list[Release] | None = None,
     today: date | None = None,
+    platform: str = "rds",
 ) -> list[Finding]:
+    """``platform`` is "rds" (RDS for PostgreSQL) or "aurora" (Aurora PostgreSQL)."""
     matrix = matrix if matrix is not None else load_matrix()
     today = today or date.today()
     rel = find_release(matrix, arcgis)
@@ -103,28 +110,31 @@ def check(
     out: list[Finding] = []
     ev = vtuple(engine_version)
     major = str(ev[0])
-    certified = rel.rds_postgresql.get(major)
+    aurora = platform == "aurora"
+    name = "Aurora" if aurora else "RDS"
+    family = "Aurora PostgreSQL" if aurora else "PostgreSQL"
+    certified = rel.versions(platform).get(major)
 
     if certified is None:
-        supported = ", ".join(sorted(rel.rds_postgresql.values(), key=vtuple))
+        supported = ", ".join(sorted(rel.versions(platform).values(), key=vtuple))
         out.append(
             Finding(
                 "CMP001",
                 Severity.FAIL,
-                f"PostgreSQL {major} is not supported on RDS by {label}",
-                f"Supported RDS versions: {supported}.",
-                {"engine_version": engine_version, "arcgis": rel.enterprise},
+                f"{family} {major} is not supported on {name} by {label}",
+                f"Supported {name} versions: {supported or 'none listed'}.",
+                {"engine_version": engine_version, "arcgis": rel.enterprise, "platform": platform},
             )
         )
     else:
-        out.append(Finding("CMP001", Severity.OK, f"PostgreSQL {major} is supported by {label}"))
+        out.append(Finding("CMP001", Severity.OK, f"{family} {major} is supported by {label}"))
         cv = vtuple(certified)
         if ev < cv:
             out.append(
                 Finding(
                     "CMP002",
                     Severity.FAIL,
-                    f"RDS {engine_version} is below the certified minimum {certified}",
+                    f"{name} {engine_version} is below the certified minimum {certified}",
                     f"Apply the minor upgrade to {certified} or later before relying on this "
                     "combination.",
                     {"certified_minimum": certified},
@@ -132,14 +142,15 @@ def check(
             )
         elif ev[:2] == cv[:2]:
             out.append(
-                Finding("CMP002", Severity.OK, f"RDS {engine_version} is the certified minor")
+                Finding("CMP002", Severity.OK, f"{name} {engine_version} is the certified minor")
             )
         else:
             out.append(
                 Finding(
                     "CMP002",
                     Severity.INFO,
-                    f"RDS {engine_version} is supported but not certified (certified: {certified})",
+                    f"{name} {engine_version} is supported but not certified "
+                    f"(certified: {certified})",
                     "Esri supports later minors of a listed major without certifying them. Test in "
                     "a lower environment first.",
                     {"certified_minimum": certified},

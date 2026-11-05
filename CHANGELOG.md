@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0 (2026-11-04)
+
+- `rdsops aurora-plan`: plan the move from RDS for PostgreSQL to Aurora PostgreSQL. Picks
+  the lowest Aurora version the Region offers that AWS allows for the source and Esri
+  supports for the ArcGIS release; checks the read replica or snapshot method's AWS
+  preconditions, encryption and WAL headroom; prints a runbook with the CLI commands and
+  the ArcGIS cutover. Read-only. Partition-aware for GovCloud.
+- `rdsops compat --platform aurora`, against Esri's Aurora PostgreSQL list.
+- Support matrix: Aurora versions for 12.1, 12.0 and 11.5. Correction: Esri's 11.5 page
+  blocks PostGIS 3.5.3 and 3.6.0, not "3.5.3 and later"; rechecked 2026-11-04.
+- ADR 0007: Aurora as a migration target (amends 0002). Runbook: aurora-migration.md.
+
 ## 0.4.0 (2026-11-04)
 
 - `rdsops restore-drill`: point-in-time or snapshot restore to a throwaway copy, timed,

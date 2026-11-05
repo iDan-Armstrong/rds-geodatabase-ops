@@ -12,8 +12,8 @@ covers how the database is designed. This repo covers how it is run: what the ba
 is, how you know the live instance still matches it, and how you prove a restore or an
 upgrade will work before you need it.
 
-**Status:** v0.4. The Terraform module and `rdsops inventory`, `health`,
-`maintenance`, `compat`, `upgrade-plan` and `restore-drill` are done.
+**Status:** v0.5. The Terraform module and `rdsops inventory`, `health`,
+`maintenance`, `compat`, `upgrade-plan`, `restore-drill` and `aurora-plan` are done.
 [docs/SCOPE.md](docs/SCOPE.md) lists what comes next and the facts it is built on.
 
 ## What to look at first
@@ -191,6 +191,63 @@ The copy is private, single-AZ and has deletion protection turned off. Without t
 RDS copies deletion protection from the source and the cleanup fails. Cleanup deletes
 only an instance tagged `rdsops-drill=true` that is not the source. See
 [docs/runbooks/restore-drill.md](docs/runbooks/restore-drill.md).
+
+### aurora-plan
+
+Plans the move from this RDS instance to Aurora PostgreSQL, for when a team or a client
+wants Aurora. It picks the target version (the lowest the Region offers that AWS allows
+for the source and Esri supports for the ArcGIS release), checks the read replica or
+snapshot method's preconditions, encryption and room for WAL, and prints the runbook
+with the ArcGIS cutover. It reads only; it never creates a cluster.
+[ADR 0007](docs/adr/0007-aurora-as-a-migration-target.md) explains how this fits with
+ADR 0002, and [docs/runbooks/aurora-migration.md](docs/runbooks/aurora-migration.md) the
+choices behind each step.
+
+GovCloud works as is: the partition comes from the Region, so ARNs read
+`arn:aws-us-gov:...`, and the Aurora versions are read from the Region, because GovCloud
+can lag commercial Regions. An unencrypted source is a failure there.
+
+```bash
+rdsops aurora-plan --instance egdb-client --region us-gov-west-1 --arcgis 12.1
+```
+
+```
+aurora-plan  egdb-client (RDS for PostgreSQL 17.5, us-gov-west-1, partition aws-us-gov)  replica method  for ArcGIS 12.1
+
+  [info] AUR001  Target Aurora PostgreSQL 17.6
+               Aurora versions in the Region were not read.
+  [ok  ] CMP001  Aurora PostgreSQL 17 is supported by ArcGIS Enterprise 12.1 / Pro 3.7
+  [ok  ] CMP002  Aurora 17.6 is the certified minor
+  [ok  ] CMP003  PostGIS 3.5.2 is not on the blocked list
+  [ok  ] CMP004  Support data for 12.1 checked 2026-11-04 (0 days ago)
+  [ok  ] AUR002  Aurora read replica method is available
+               Little downtime: the replica catches up while ArcGIS keeps working, and writes stop only for the promotion.
+  [ok  ] AUR003  Source is encrypted; the cluster will be too
+               AWS does not allow an unencrypted cluster from an encrypted source, so --storage-encrypted is required on create-db-cluster.
+  [info] AUR004  No Multi-AZ during the migration
+               AWS: Multi-AZ is not available during the migration. After promotion, add an Aurora reader in a second Availability Zone for failover.
+  [info] AUR006  ArcGIS must be pointed at the cluster
+               Registered data stores and .sde connection files name the RDS endpoint. After promotion, update each to the cluster writer endpoint, validate them, then check PostGIS on the cluster.
+
+  Runbook
+   1. Take a WebGISDR backup of ArcGIS Enterprise and a manual snapshot of egdb-client: aws rds create-db-snapshot --region us-gov-west-1 --db-instance-identifier egdb-client --db-snapshot-identifier egdb-client-pre-aurora
+   2. aws rds create-db-cluster --region us-gov-west-1 --db-cluster-identifier egdb-client-aurora --engine aurora-postgresql --engine-version 17.6 --replication-source-identifier arn:aws-us-gov:rds:us-gov-west-1:<account-id>:db:egdb-client --storage-encrypted
+   3. aws rds create-db-instance --region us-gov-west-1 --db-cluster-identifier egdb-client-aurora --db-instance-identifier egdb-client-aurora-1 --db-instance-class db.r6g.large --engine aurora-postgresql
+   4. Watch RDSToAuroraPostgreSQLReplicaLag on the cluster, and FreeStorageSpace and OldestReplicationSlotLag on the source, until the replica is caught up
+   5. Stop writes: stop ArcGIS services and edit sessions that write to the geodatabase. Check SELECT pg_current_wal_lsn() on the source is behind SELECT pg_last_wal_replay_lsn() on the cluster, and replica lag is 0
+   6. aws rds promote-read-replica-db-cluster --region us-gov-west-1 --db-cluster-identifier egdb-client-aurora
+   7. aws rds create-db-instance --region us-gov-west-1 --db-cluster-identifier egdb-client-aurora --db-instance-identifier egdb-client-aurora-2 --db-instance-class db.r6g.large --engine aurora-postgresql --availability-zone <a second AZ>  (reader for failover)
+   8. Point ArcGIS at the cluster writer endpoint: update each registered data store (Server Manager > Site > Data Stores, or POST admin/data/items/<item>/edit) and the .sde connection files, then validate the data stores
+   9. On the cluster: SELECT postgis_full_version(); then rdsops compat --platform aurora --engine-version 17.6 --postgis <version> --arcgis 12.1
+  10. Start ArcGIS services and test editing. Keep the source instance stopped, not deleted, until the cluster has run cleanly for an agreed period (RDS starts a stopped instance again after seven days); delete it with a final snapshot
+```
+
+(Offline planning: `--engine-version 17.5 --region us-gov-west-1 --encrypted yes`, so the
+Region's Aurora versions were not read and the account is a placeholder. With `--instance`
+both come from AWS.)
+
+`rdsops compat --platform aurora` checks an Aurora version against Esri's Aurora list,
+which is not the RDS list: for 12.1 it stops at Aurora 17.6, with no 18.
 
 ## How it is tested
 

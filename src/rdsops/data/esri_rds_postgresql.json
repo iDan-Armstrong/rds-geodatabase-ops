@@ -1,11 +1,26 @@
 {
-  "_about": "ArcGIS support for Amazon RDS for PostgreSQL. Each entry is copied from Esri's 'databases in the cloud' page for that release, with the date it was checked. The listed minor is the minimum certified minor for that major; later minors are supported but not certified unless Esri says otherwise. ArcGIS supports the PostGIS versions AWS ships for each listed RDS version, except where postgis_blocked says otherwise.",
+  "_about": "ArcGIS support for Amazon RDS for PostgreSQL and Amazon Aurora (PostgreSQL-compatible edition). Each entry is copied from Esri's 'databases in the cloud' page for that release, with the date it was checked. The listed minor is the minimum certified minor for that major; later minors are supported but not certified unless Esri says otherwise. ArcGIS supports the PostGIS versions AWS ships for each listed RDS version, except where postgis_blocked says otherwise. aurora_postgresql lists Esri's minimum supported Aurora minor per major; Esri notes that AWS installs a compatible PostGIS version on Aurora.",
   "releases": [
     {
       "enterprise": "12.1",
       "pro": "3.7",
-      "rds_postgresql": {"14": "14.20", "15": "15.15", "16": "16.11", "17": "17.7", "18": "18.1"},
-      "postgis_blocked": ["3.5.3", "3.6.0"],
+      "rds_postgresql": {
+        "14": "14.20",
+        "15": "15.15",
+        "16": "16.11",
+        "17": "17.7",
+        "18": "18.1"
+      },
+      "aurora_postgresql": {
+        "14": "14.19",
+        "15": "15.14",
+        "16": "16.10",
+        "17": "17.6"
+      },
+      "postgis_blocked": [
+        "3.5.3",
+        "3.6.0"
+      ],
       "postgis_blocked_note": "PostGIS issue 5978: SRID creation and spatial data creation fail or are malformed in enterprise geodatabases.",
       "checked": "2026-11-04",
       "sources": [
@@ -16,8 +31,22 @@
     {
       "enterprise": "12.0",
       "pro": "3.6",
-      "rds_postgresql": {"14": "14.18", "15": "15.13", "16": "16.9", "17": "17.5"},
-      "postgis_blocked": ["3.5.3", "3.6.0"],
+      "rds_postgresql": {
+        "14": "14.18",
+        "15": "15.13",
+        "16": "16.9",
+        "17": "17.5"
+      },
+      "aurora_postgresql": {
+        "14": "14.17",
+        "15": "15.12",
+        "16": "16.8",
+        "17": "17.4"
+      },
+      "postgis_blocked": [
+        "3.5.3",
+        "3.6.0"
+      ],
       "postgis_blocked_note": "PostGIS issue 5978.",
       "checked": "2026-11-04",
       "sources": [
@@ -27,12 +56,26 @@
     {
       "enterprise": "11.5",
       "pro": "3.5",
-      "rds_postgresql": {"13": "13.20", "14": "14.17", "15": "15.12", "16": "16.8"},
-      "postgis_blocked_from": "3.5.3",
-      "postgis_blocked_note": "PostGIS 3.5.3 and later: PostGIS issue 5978.",
+      "rds_postgresql": {
+        "13": "13.20",
+        "14": "14.17",
+        "15": "15.12",
+        "16": "16.8"
+      },
+      "aurora_postgresql": {
+        "13": "13.18",
+        "14": "14.15",
+        "15": "15.10",
+        "16": "16.6"
+      },
+      "postgis_blocked_note": "PostGIS issue 5978. Esri's 11.5 page lists 3.5.3 and 3.6.0.",
       "checked": "2026-11-04",
       "sources": [
         "https://enterprise.arcgis.com/en/system-requirements/11.5/linux/databases-in-the-cloud.htm"
+      ],
+      "postgis_blocked": [
+        "3.5.3",
+        "3.6.0"
       ]
     }
   ]
