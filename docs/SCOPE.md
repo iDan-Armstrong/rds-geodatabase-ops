@@ -30,6 +30,10 @@ Checked 2026-11-04. Each one is re-checked before a release that depends on it.
 | Aurora PostgreSQL supported by ArcGIS: 12.1 at 14.19, 15.14, 16.10, 17.6; 12.0 at 14.17, 15.12, 16.8, 17.4; 11.5 at 13.18, 14.15, 15.10, 16.6. AWS installs a compatible PostGIS | [Esri 12.1](https://doc.esri.com/en/arcgis-enterprise/latest/plan/databases-in-the-cloud.html), [12.0](https://enterprise.arcgis.com/en/system-requirements/12.0/linux/databases-in-the-cloud.htm), [11.5](https://enterprise.arcgis.com/en/system-requirements/11.5/linux/databases-in-the-cloud.htm) |
 | An Aurora read replica of an RDS instance needs the same Region and account, a same-or-higher minor in the same major, no existing Aurora or cross-Region replica; encrypted sources need `--storage-encrypted`; no Multi-AZ during migration; WAL accumulates on the source | [AWS: Aurora read replica migration](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.Migrating.RDSPostgreSQL.Replica.html) |
 | Snapshot migration needs an Aurora version the same or a higher minor than the snapshot; an unencrypted snapshot can be encrypted with `--kms-key-id`; cross-Region needs a snapshot copy first | [AWS: snapshot migration](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.Migrating.RDSPostgreSQL.Import.Console.html) |
+| RDS for PostgreSQL 14 and later store passwords with scram-sha-256 by default; `rds.accepted_password_auth_method = scram` refuses md5; `rds_tools.role_password_encryption_type()` lists roles still on md5 | [AWS: SCRAM for PostgreSQL](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/PostgreSQL_Password_Encryption_configuration.html) |
+| Current RDS CAs are rds-ca-rsa2048-g1 (the default), rds-ca-rsa4096-g1 and rds-ca-ecc384-g1; they rotate the server certificate automatically on engine versions that support it | [AWS: SSL/TLS for RDS](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html) |
+| NIST SP 800-61 Rev. 3 (April 2025) supersedes Rev. 2 and frames incident response within CSF 2.0 | [NIST](https://csrc.nist.gov/pubs/sp/800/61/r3/final) |
+| Federal Executive Branch civilian agencies notify CISA within one hour of identification by the agency's top-level CSIRT, SOC or IT department | [CISA](https://www.cisa.gov/incident-notification-guidelines) |
 ## In scope
 
 1. **Terraform module** `terraform/modules/egdb-postgres`: KMS encryption, TLS required,
@@ -46,6 +50,8 @@ Checked 2026-11-04. Each one is re-checked before a release that depends on it.
    - `aurora-plan`: preflight and runbook for moving to Aurora PostgreSQL (v0.5, ADR 0007)
    - `fleet`: every instance across Regions and accounts, posture and compat per instance,
      drift across them (v0.6)
+   - `security` and `incident`: deep security posture, and incident playbooks that print
+     the contain, preserve, eradicate, recover and notify steps (v0.7, ADR 0008)
 3. **Geodatabase checks**: sde state and lineage growth, compress and analyze cadence.
 4. **Runbooks** for restore, failover, credential rotation and upgrade; ADRs; a 5-minute
    demo script.

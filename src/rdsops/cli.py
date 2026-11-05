@@ -187,6 +187,84 @@ def parse_targets(values: list[str], profile: str | None) -> list[tuple[str, str
     return out
 
 
+def cmd_security(args) -> int:
+    from datetime import UTC, datetime
+
+    from . import security
+
+    s = session(args.region, args.profile)
+    snap = security.gather(
+        s.client("rds"),
+        s.client("ec2"),
+        s.client("kms"),
+        s.client("secretsmanager"),
+        args.instance,
+        args.region or "",
+    )
+    if _db_requested(args):
+        with _connect(args) as conn:
+            security.gather_db(conn, snap)
+    findings = security.evaluate(snap, datetime.now(UTC))
+    header = [f"security  {snap.facts.identifier}  {snap.facts.engine} {snap.facts.engine_version}"]
+    return emit(args, header, findings, {"instance": snap.facts.identifier})
+
+
+def cmd_incident(args) -> int:
+    from datetime import UTC, datetime
+
+    from . import incident
+
+    since = datetime.fromisoformat(args.since) if args.since else None
+    ctx = incident.IncidentContext(
+        kind=args.kind,
+        instance=args.instance,
+        region=args.region or "<region>",
+        federal=args.federal,
+        role=args.role,
+        access_key=args.access_key,
+        since=since,
+        now=datetime.now(UTC),
+        snapshot=args.snapshot,
+        group=args.group,
+        cidr=args.cidr,
+        arcgis=not args.no_arcgis,
+    )
+    if not args.offline:
+        rds = session(args.region, args.profile).client("rds")
+        db = rds.describe_db_instances(DBInstanceIdentifier=args.instance)["DBInstances"][0]
+        ctx.managed_secret = bool(db.get("MasterUserSecret"))
+        ctx.deletion_protection = bool(db.get("DeletionProtection"))
+        ctx.publicly_accessible = bool(db.get("PubliclyAccessible"))
+        ctx.backup_retention_days = int(db.get("BackupRetentionPeriod", 0))
+        try:
+            backups = rds.describe_db_instance_automated_backups(DBInstanceIdentifier=args.instance)
+            win = (backups["DBInstanceAutomatedBackups"] or [{}])[0].get("RestoreWindow") or {}
+            ctx.earliest_restorable = win.get("EarliestTime")
+        except Exception:  # noqa: BLE001 - readiness then just omits the window check
+            pass
+    pb = incident.playbook(ctx)
+    header = [
+        f"incident  {args.kind}: {incident.KINDS[args.kind]}",
+        f"  instance {args.instance}  {ctx.region}" + ("  federal" if args.federal else ""),
+    ]
+    if args.json:
+        print(json.dumps(pb.to_dict(), indent=2, default=str))
+        return exit_code(pb.findings)
+    code = emit(args, header, pb.findings, {})
+    print("\n  Playbook (nothing here has been run)")
+    phase = None
+    for n, st in enumerate(pb.steps, 1):
+        if st.phase != phase:
+            phase = st.phase
+            print(f"\n  {phase}")
+        print(f"  {n:>2}. {st.title}")
+        if st.command:
+            print(f"      {'$' if incident.is_command(st.command) else '>'} {st.command}")
+        if st.why:
+            print(f"      {st.why}")
+    return code
+
+
 def cmd_fleet(args) -> int:
     from . import fleet
 
@@ -406,6 +484,39 @@ def build_parser() -> argparse.ArgumentParser:
     _aws_args(cp)
     _output_args(cp)
     cp.set_defaults(func=cmd_compat)
+
+    sc = sub.add_parser(
+        "security", help="Deep security posture: TLS, CA, exposure, snapshots, keys, audit"
+    )
+    sc.add_argument("--instance", required=True)
+    _db_args(sc)
+    _aws_args(sc)
+    _output_args(sc)
+    sc.set_defaults(func=cmd_security)
+
+    ic = sub.add_parser(
+        "incident", help="Contingency playbook for a security incident (prints only)"
+    )
+    ic.add_argument(
+        "--kind",
+        required=True,
+        choices=sorted(__import__("rdsops.incident", fromlist=["KINDS"]).KINDS),
+    )
+    ic.add_argument("--instance", required=True)
+    ic.add_argument("--role", help="Database role involved")
+    ic.add_argument("--access-key", help="AWS access key id involved")
+    ic.add_argument("--since", help="Last known good time or start, ISO 8601")
+    ic.add_argument("--snapshot", help="Snapshot involved")
+    ic.add_argument("--group", help="Security group involved")
+    ic.add_argument("--cidr", help="CIDR of the rule involved")
+    ic.add_argument(
+        "--federal", action="store_true", help="Federal agency: CISA one-hour notification"
+    )
+    ic.add_argument("--no-arcgis", action="store_true", help="No ArcGIS clients connect")
+    ic.add_argument("--offline", action="store_true", help="Do not read the instance from AWS")
+    _aws_args(ic)
+    _output_args(ic)
+    ic.set_defaults(func=cmd_incident)
 
     fl = sub.add_parser("fleet", help="Every geodatabase instance across Regions, in one view")
     fl.add_argument(

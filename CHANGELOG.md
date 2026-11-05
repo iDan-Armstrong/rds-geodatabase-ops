@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.0 (2026-11-05)
+
+- `rdsops security`: TLS required and minimum version, md5 or SCRAM password storage, the
+  certificate authority and server certificate expiry, internet exposure of the port,
+  public, shared and unencrypted snapshots, KMS key rotation, managed master secret
+  rotation, audit trail gaps, deletion protection and restore window; with a connection,
+  non-TLS sessions, extra rds_superuser members and CREATE on public. Metadata only.
+- `rdsops incident`: playbooks for credentials, aws-keys, exposure, destruction,
+  exfiltration and certificate incidents, filled in for the instance, with readiness
+  findings. Prints only (ADR 0008). Evidence before destructive steps, deletion
+  protection first, CISA one-hour notification with `--federal`.
+- Runbook: security-incidents.md.
+
 ## 0.6.0 (2026-11-04)
 
 - `rdsops fleet`: every RDS for PostgreSQL instance across Regions (`REGION@PROFILE` for

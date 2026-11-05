@@ -12,9 +12,9 @@ covers how the database is designed. This repo covers how it is run: what the ba
 is, how you know the live instance still matches it, and how you prove a restore or an
 upgrade will work before you need it.
 
-**Status:** v0.6. The Terraform module and `rdsops inventory`, `health`,
-`maintenance`, `compat`, `upgrade-plan`, `restore-drill`, `aurora-plan` and `fleet` are
-done.
+**Status:** v0.7. The Terraform module and `rdsops inventory`, `health`,
+`maintenance`, `compat`, `upgrade-plan`, `restore-drill`, `aurora-plan`, `fleet`,
+`security` and `incident` are done.
 [docs/SCOPE.md](docs/SCOPE.md) lists what comes next and the facts it is built on.
 
 ## What to look at first
@@ -288,6 +288,110 @@ fleet  us-east-1, us-gov-west-1  tag geodatabase=true  default ArcGIS 12.1
 
 It needs `rds:DescribeDBInstances` in each account, nothing else. A Region it cannot
 read is reported and the rest still runs.
+
+### security
+
+A deeper look than `inventory`: TLS required and its minimum version, password storage
+(md5 or SCRAM), the certificate authority and server certificate, whether the port is
+open to the internet, public or unencrypted snapshots, KMS key rotation, the managed
+master secret, the audit trail (log export, pgaudit, connection logging), deletion
+protection and the restore window, and with a database connection, connections without
+TLS, extra `rds_superuser` members and `CREATE` on the public schema.
+
+```
+security  egdb-lab  postgres 17.7
+
+  [FAIL] SEC001  Unencrypted connections are allowed (rds.force_ssl = 0)
+               Credentials and geodatabase traffic can cross the network in clear text. Set rds.force_ssl = 1 in the custom parameter group; ArcGIS clients connect over TLS by default.
+  [WARN] SEC003  2 role(s) still have md5 passwords
+               sde, gis_editor. Reset them with password_encryption = scram-sha-256 (rds_tools.role_password_encryption_type() lists them), then set rds.accepted_password_auth_method = scram.
+  [WARN] SEC004  Server certificate expires in 12 days
+               Current CAs rotate the server certificate automatically on engine versions that support it; otherwise rotate it in a maintenance window.
+  [FAIL] SEC005  Port 5432 is open to the internet
+               The instance has a public address and sg-0a1b2c3d allows 0.0.0.0/0. Remove the rule and turn off public access now; treat the credentials as exposed (rdsops incident --kind exposure).
+  [FAIL] SEC006  1 snapshot(s) can be restored by any AWS account
+               egdb-lab-before-upgrade. Anyone can copy the whole geodatabase. Remove 'all' from the restore attribute now, then find out who set it (rdsops incident --kind exposure).
+  [WARN] SEC008  Master password is not managed by Secrets Manager
+               Someone knows it, and it does not rotate. Switch with --manage-master-user-password (see ADR 0005 before a blue/green upgrade).
+  [WARN] SEC009  Audit trail gaps: pgaudit is not loaded
+               After an incident these are what show who connected and what they ran. Without them the investigation starts blind.
+  [WARN] SEC010  Deletion protection is off
+               One API call with stolen credentials deletes the instance.
+  [WARN] SEC011  1 role(s) besides the master user hold rds_superuser
+               sde. The sde owner and ArcGIS connections do not need it after setup.
+```
+
+(Evaluated on facts for a deliberately misconfigured lab instance, `--quiet`; with
+`--instance` they come from AWS and, with `--dsn`, from the database.)
+
+It reads metadata only: `rds:Describe*`, `ec2:DescribeSecurityGroups`,
+`kms:DescribeKey`, `kms:GetKeyRotationStatus` and `secretsmanager:DescribeSecret`. It
+never calls `GetSecretValue`. Anything it cannot read is reported as not checked, not as
+safe.
+
+### incident
+
+Contingency playbooks for security incidents, filled in for the instance: `credentials`,
+`aws-keys`, `exposure`, `destruction`, `exfiltration` and `certificate`. Phases follow
+NIST SP 800-61 Rev. 3. Evidence is preserved before anything that destroys it, deletion
+protection goes on first if it is off, and `--federal` puts the CISA one-hour
+notification right after triage. It prints and never runs anything
+([ADR 0008](docs/adr/0008-incident-playbooks-print-never-act.md));
+[docs/runbooks/security-incidents.md](docs/runbooks/security-incidents.md) explains each
+playbook.
+
+```bash
+rdsops incident --kind exposure --instance nwsa-egdb --region us-gov-west-1 \
+    --snapshot nwsa-egdb-before-upgrade --federal
+```
+
+```
+incident  exposure: The database or a snapshot was reachable from the internet
+  instance nwsa-egdb  us-gov-west-1  federal
+
+  [info] INC005  Federal: CISA notification within one hour of identification
+               The Notify step comes right after triage for that reason.
+
+  Playbook (nothing here has been run)
+
+  Triage
+   1. Open an incident record and name one incident lead
+      Start a timeline now (UTC). Every action from here on goes in it with who and when.
+   2. Scope: what can this instance reach, and what can reach it
+      $ aws rds describe-db-instances --region us-gov-west-1 --db-instance-identifier nwsa-egdb
+      Note the endpoint, security groups, snapshots and the ArcGIS sites that connect.
+
+  Notify
+   3. Report to CISA within one hour of identification
+      > https://www.cisa.gov/report
+      CISA's Federal Incident Notification Guidelines: federal Executive Branch civilian agencies notify CISA within one hour of the incident being identified by the agency's top-level CSIRT, SOC or IT department. Report what is known; update later. Contractors and cloud providers report through the agency and their FedRAMP or contract terms.
+   4. Tell the agency SOC and the system owner
+      Follow the agency incident response plan for internal escalation and for privacy officials if personal data may be involved.
+
+  Contain
+   5. Make snapshot nwsa-egdb-before-upgrade private
+      $ aws rds modify-db-snapshot-attribute --region us-gov-west-1 --db-snapshot-identifier nwsa-egdb-before-upgrade --attribute-name restore --values-to-remove all
+      Every minute it is public, any AWS account can copy the whole geodatabase.
+   6. Turn off public access
+      $ aws rds modify-db-instance --region us-gov-west-1 --db-instance-identifier nwsa-egdb --no-publicly-accessible --apply-immediately
+      ArcGIS connects from inside the VPC and does not need it.
+   7. Find anything else that is open
+      $ aws rds describe-db-instances --region us-gov-west-1 --db-instance-identifier nwsa-egdb --query 'DBInstances[0].[PubliclyAccessible,VpcSecurityGroups]'; aws ec2 describe-security-groups --region us-gov-west-1 --group-ids <groups>; for each manual snapshot: aws rds describe-db-snapshot-attributes --region us-gov-west-1 --db-snapshot-identifier <snapshot>
+      Public address, a 0.0.0.0/0 rule on the port, or a snapshot whose restore attribute includes all. Close each one the same way.
+
+  Preserve
+   8. Snapshot the instance as it is now
+      $ aws rds create-db-snapshot --region us-gov-west-1 --db-instance-identifier nwsa-egdb --db-snapshot-identifier nwsa-egdb-incident-202611051429 --tags Key=incident,Value=true
+      The configuration and logs show how long it was open.
+   9. Keep the database logs for the window
+      $ aws rds describe-db-log-files --region us-gov-west-1 --db-instance-identifier nwsa-egdb; aws logs create-export-task --region us-gov-west-1 --log-group-name /aws/rds/instance/nwsa-egdb/postgresql --from <ms> --to <ms> --destination <evidence bucket>
+      Log files on the instance rotate away. pgaudit lines show what each role ran.
+  ...
+```
+
+(The first part of a real run with `--offline`; the rest covers preserving logs and the
+CloudTrail record, finding who opened it, checking who connected while it was open,
+rotating credentials, a guard rail, and the review.)
 
 ## How it is tested
 
