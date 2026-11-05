@@ -12,9 +12,9 @@ covers how the database is designed. This repo covers how it is run: what the ba
 is, how you know the live instance still matches it, and how you prove a restore or an
 upgrade will work before you need it.
 
-**Status:** v0.7. The Terraform module and `rdsops inventory`, `health`,
+**Status:** v0.8. The Terraform module and `rdsops inventory`, `health`,
 `maintenance`, `compat`, `upgrade-plan`, `restore-drill`, `aurora-plan`, `fleet`,
-`security` and `incident` are done.
+`security`, `incident`, `resilience` and `failover-drill` are done.
 [docs/SCOPE.md](docs/SCOPE.md) lists what comes next and the facts it is built on.
 
 ## What to look at first
@@ -392,6 +392,68 @@ incident  exposure: The database or a snapshot was reachable from the internet
 (The first part of a real run with `--offline`; the rest covers preserving logs and the
 CloudTrail record, finding who opened it, checking who connected while it was open,
 rotating credentials, a guard rail, and the review.)
+
+### resilience
+
+Losing the instance or its zone, and losing the Region: which recovery paths exist
+(Multi-AZ standby, point-in-time restore, cross-Region replica, replicated automated
+backups, snapshot copies), how much data each would lose, and how long each takes,
+against your targets. Data loss comes from AWS timestamps. Time comes from AWS's
+Multi-AZ figure or from your own drills, never from a formula
+([ADR 0009](docs/adr/0009-recovery-times-are-measured-not-guessed.md)).
+
+```bash
+rdsops resilience --instance nwsa-egdb --region us-gov-west-1 --dr-region us-gov-east-1 \
+    --dr-kms-key alias/egdb-dr --production --rto-minutes 60 --rpo-minutes 15 \
+    --report drills.jsonl
+```
+
+```
+resilience  nwsa-egdb  us-gov-west-1  DR us-gov-east-1  targets RTO 60 min, RPO 15 min
+
+  [ok  ] RES001  Instance or zone loss: 2 recovery path(s)
+               Multi-AZ standby: data loss 0 s, back in 3 min
+               Point-in-time restore in the Region: data loss 4 min, back in 46 min
+  [ok  ] RES003  Instance or zone loss: best data loss 0 s via Multi-AZ standby (target 15 min)
+  [ok  ] RES004  Instance or zone loss: back in 3 min via Multi-AZ standby (target 60 min)
+  [ok  ] RES002  Region loss: 1 recovery path(s)
+               Snapshot copy nwsa-egdb-weekly-1101 (us-gov-east-1): data loss 96.0 h, back in 46 min
+  [FAIL] RES003  Region loss: best data loss 96.0 h via Snapshot copy nwsa-egdb-weekly-1101 (us-gov-east-1) (target 15 min)
+               Over target. A replica or replicated backups lose minutes; copied snapshots lose everything since the copy.
+  [ok  ] RES004  Region loss: back in 46 min via Snapshot copy nwsa-egdb-weekly-1101 (us-gov-east-1) (target 60 min)
+  [ok  ] RES005  KMS key ready in us-gov-east-1
+  [info] RES008  No event subscription covers failover
+               Subscribe to the failover and availability categories so a failover at night reaches someone (aws rds create-event-subscription).
+```
+
+(Evaluated on facts for a made-up client instance whose only DR copy is a weekly snapshot,
+with a measured 46-minute restore; clock fixed at 2026-11-05 12:00 UTC.)
+
+### failover-drill
+
+Plans a zone drill (a forced Multi-AZ failover in an announced window) or a Region drill
+(a scratch restore in the DR Region; the real replica is never promoted), and scores the
+recorded result: time to writable, time until ArcGIS answers, data lost.
+[docs/runbooks/disaster-recovery.md](docs/runbooks/disaster-recovery.md) has the paths
+and the drill record format.
+
+```
+failover-drill  region  nwsa-egdb  (plan; nothing here has been run)
+
+  [ok  ] DRD000  Non-disruptive: restores a scratch copy in us-gov-east-1, production is untouched
+
+  Steps
+   1. Note the start time (UTC) in the drill record: this is when the Region is 'lost'.
+   2. Note the newest committed change in us-gov-west-1 (it is what a real event would lose if it is not in the copy).
+   3. aws rds restore-db-instance-to-point-in-time --region us-gov-east-1 --source-db-instance-automated-backups-arn <replicated backups ARN> --target-db-instance-identifier nwsa-egdb-dr-drill-202611051548 --use-latest-restorable-time --no-publicly-accessible --tags Key=rdsops-drill,Value=true
+   4. aws rds wait db-instance-available --region us-gov-east-1 --db-instance-identifier nwsa-egdb-dr-drill-202611051548
+   5. Record writable_at. Check PostGIS and the geodatabase: rdsops health against the copy.
+   6. Register the copy as a data store on a staging ArcGIS Server in the DR Region, validate it, and open a busy service; record apps_ok_at.
+   7. Compare the newest change in the copy with the one noted: data_loss_seconds.
+  ...
+```
+
+(The first part of a real `--offline` run.)
 
 ## How it is tested
 

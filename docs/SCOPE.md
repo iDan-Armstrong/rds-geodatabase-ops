@@ -34,6 +34,10 @@ Checked 2026-11-04. Each one is re-checked before a release that depends on it.
 | Current RDS CAs are rds-ca-rsa2048-g1 (the default), rds-ca-rsa4096-g1 and rds-ca-ecc384-g1; they rotate the server certificate automatically on engine versions that support it | [AWS: SSL/TLS for RDS](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html) |
 | NIST SP 800-61 Rev. 3 (April 2025) supersedes Rev. 2 and frames incident response within CSF 2.0 | [NIST](https://csrc.nist.gov/pubs/sp/800/61/r3/final) |
 | Federal Executive Branch civilian agencies notify CISA within one hour of identification by the agency's top-level CSIRT, SOC or IT department | [CISA](https://www.cisa.gov/incident-notification-guidelines) |
+| Multi-AZ DB instance failover is typically 60 to 120 seconds; the standby cannot serve reads; the endpoint's DNS record moves to the standby, and AWS advises a JVM DNS TTL of 60 seconds or less. Multi-AZ DB clusters fail over in typically under 35 seconds | [AWS: Multi-AZ failover](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.Failover.html), [AWS: Multi-AZ](https://aws.amazon.com/rds/features/multi-az/) |
+| Automated backups can be replicated to another Region for RDS for PostgreSQL (not Multi-AZ DB clusters); GovCloud (US-East) and (US-West) replicate to each other; started in the destination Region with a KMS key there | [AWS: Replicating automated backups](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_ReplicateBackups.html), [StartDBInstanceAutomatedBackupsReplication](https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_StartDBInstanceAutomatedBackupsReplication.html) |
+| Copying an encrypted snapshot to another Region requires a KMS key in the destination Region | [CopyDBSnapshot](https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_CopyDBSnapshot.html) |
+| Promoting a PostgreSQL read replica is not reversible; RDS reports up to five minutes of replica lag when no transactions run | [AWS: PostgreSQL read replicas](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_PostgreSQL.Replication.ReadReplicas.html) |
 ## In scope
 
 1. **Terraform module** `terraform/modules/egdb-postgres`: KMS encryption, TLS required,
@@ -52,6 +56,8 @@ Checked 2026-11-04. Each one is re-checked before a release that depends on it.
      drift across them (v0.6)
    - `security` and `incident`: deep security posture, and incident playbooks that print
      the contain, preserve, eradicate, recover and notify steps (v0.7, ADR 0008)
+   - `resilience` and `failover-drill`: zone and Region loss against RTO and RPO targets,
+     and drills that prove the times (v0.8, ADR 0009)
 3. **Geodatabase checks**: sde state and lineage growth, compress and analyze cadence.
 4. **Runbooks** for restore, failover, credential rotation and upgrade; ADRs; a 5-minute
    demo script.

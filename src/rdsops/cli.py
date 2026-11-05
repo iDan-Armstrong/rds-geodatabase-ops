@@ -413,6 +413,106 @@ def cmd_restore_drill(args) -> int:
     return emit(args, header, findings, {"result": result.to_dict()})
 
 
+def _read_reports(paths) -> list[str]:
+    lines: list[str] = []
+    for p in paths or []:
+        with open(p, encoding="utf-8") as fh:
+            lines += fh.readlines()
+    return lines
+
+
+def cmd_resilience(args) -> int:
+    from datetime import UTC, datetime
+
+    from . import resilience
+
+    src = session(args.region, args.profile)
+    dr = session(args.dr_region, args.dr_profile or args.profile) if args.dr_region else None
+    snap = resilience.gather(
+        src.client("rds"),
+        args.instance,
+        args.region or src.region_name,
+        dr_rds=dr.client("rds") if dr else None,
+        dr_region=args.dr_region,
+        kms=dr.client("kms") if dr and args.dr_kms_key else None,
+        dr_kms_key_id=args.dr_kms_key,
+        cloudwatch=dr.client("cloudwatch") if dr and args.replica_lag else None,
+        production=args.production,
+    )
+    m = resilience.measured_minutes(_read_reports(args.report))
+    snap.measured_restore_minutes = m.get("restore")
+    snap.measured_az_minutes = m.get("az")
+    snap.measured_region_minutes = m.get("region")
+    findings = resilience.evaluate(
+        snap, datetime.now(UTC), resilience.Targets(args.rto_minutes, args.rpo_minutes)
+    )
+    header = [
+        f"resilience  {args.instance}  {snap.region}"
+        + (
+            f"  DR {args.dr_region}"
+            if args.dr_region
+            else "  (no --dr-region: Region loss not read)"
+        )
+        + f"  targets RTO {args.rto_minutes:g} min, RPO {args.rpo_minutes:g} min"
+    ]
+    return emit(args, header, findings, {"instance": args.instance})
+
+
+def cmd_failover_drill(args) -> int:
+    import json as _json
+    from datetime import UTC, datetime
+
+    from . import failover, resilience
+
+    req = failover.FailoverRequest(
+        kind=args.kind,
+        instance=args.instance,
+        region=args.region or "<region>",
+        dr_region=args.dr_region,
+        rto_minutes=args.rto_minutes,
+        rpo_minutes=args.rpo_minutes,
+        target=args.target,
+    )
+    if args.result:
+        with open(args.result, encoding="utf-8") as fh:
+            result = failover.result_from_dict(_json.load(fh))
+        findings = failover.evaluate(result, req)
+        if args.report:
+            with open(args.report, "a", encoding="utf-8") as fh:
+                fh.write(
+                    _json.dumps({"kind": args.kind, "findings": [f.to_dict() for f in findings]})
+                    + "\n"
+                )
+        header = [f"failover-drill  {args.kind}  {args.instance}  result {args.result}"]
+        return emit(args, header, findings, {"kind": args.kind})
+
+    snap = None
+    if not args.offline:
+        src = session(args.region, args.profile)
+        dr = session(args.dr_region, args.dr_profile or args.profile) if args.dr_region else None
+        snap = resilience.gather(
+            src.client("rds"),
+            args.instance,
+            args.region or src.region_name,
+            dr_rds=dr.client("rds") if dr else None,
+            dr_region=args.dr_region,
+        )
+    findings, steps = failover.plan(req, snap, datetime.now(UTC))
+    header = [f"failover-drill  {args.kind}  {args.instance}  (plan; nothing here has been run)"]
+    if args.json:
+        return emit(args, header, findings, {"steps": steps})
+    code = emit(args, header, findings, {})
+    if steps:
+        print("\n  Steps")
+        for n, st in enumerate(steps, 1):
+            print(f"  {n:>2}. {st}")
+        print(
+            "\n  Record started, writable_at, apps_ok_at, data_loss_seconds and checks in a JSON "
+            "file and score it with --result."
+        )
+    return code
+
+
 # ------------------------------------------------------------------- parser
 
 
@@ -581,6 +681,44 @@ def build_parser() -> argparse.ArgumentParser:
     _aws_args(dr)
     _output_args(dr)
     dr.set_defaults(func=cmd_restore_drill)
+
+    rs = sub.add_parser(
+        "resilience",
+        help="Zone and Region loss: recovery paths, data loss and time against targets",
+    )
+    rs.add_argument("--instance", required=True)
+    rs.add_argument("--dr-region", help="The Region you would recover into")
+    rs.add_argument("--dr-profile", help="AWS profile for the DR Region (default --profile)")
+    rs.add_argument("--dr-kms-key", help="KMS key id or alias in the DR Region to check")
+    rs.add_argument("--replica-lag", action="store_true", help="Read ReplicaLag from CloudWatch")
+    rs.add_argument("--production", action="store_true", help="Gaps are failures")
+    rs.add_argument("--rto-minutes", type=float, default=60.0)
+    rs.add_argument("--rpo-minutes", type=float, default=15.0)
+    rs.add_argument(
+        "--report",
+        action="append",
+        help="restore-drill or failover-drill report (JSON lines) with measured times",
+    )
+    _aws_args(rs)
+    _output_args(rs)
+    rs.set_defaults(func=cmd_resilience)
+
+    fo = sub.add_parser(
+        "failover-drill", help="Plan a zone or Region failover drill, or score a recorded one"
+    )
+    fo.add_argument("--kind", required=True, choices=["az", "region"])
+    fo.add_argument("--instance", required=True)
+    fo.add_argument("--dr-region")
+    fo.add_argument("--dr-profile")
+    fo.add_argument("--target", help="Scratch instance name for a Region drill")
+    fo.add_argument("--rto-minutes", type=float, default=60.0)
+    fo.add_argument("--rpo-minutes", type=float, default=15.0)
+    fo.add_argument("--offline", action="store_true", help="Plan without reading AWS")
+    fo.add_argument("--result", help="JSON record of a drill to score")
+    fo.add_argument("--report", help="Append the scored result to this JSON lines file")
+    _aws_args(fo)
+    _output_args(fo)
+    fo.set_defaults(func=cmd_failover_drill)
     return p
 
 

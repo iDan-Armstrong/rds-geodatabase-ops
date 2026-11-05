@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.0 (2026-11-05)
+
+- `rdsops resilience`: zone loss and Region loss scored against `--rto-minutes` and
+  `--rpo-minutes`: Multi-AZ, point-in-time restore, cross-Region replicas (lag from
+  CloudWatch with `--replica-lag`), replicated automated backups and snapshot copies in
+  the DR Region; a KMS key and the engine version in the DR Region; failover event
+  subscriptions. Recovery times only from AWS's Multi-AZ figure or measured drills.
+- `rdsops failover-drill`: plans zone and Region drills and scores a recorded result
+  (`--result`), including how long ArcGIS took after the database. Prints only.
+- ADR 0009, runbook disaster-recovery.md.
+
 ## 0.7.0 (2026-11-05)
 
 - `rdsops security`: TLS required and minimum version, md5 or SCRAM password storage, the

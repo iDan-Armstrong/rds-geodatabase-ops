@@ -14,6 +14,10 @@ PURE = [
     "drill",
     "aurora",
     "fleet",
+    "security",
+    "incident",
+    "resilience",
+    "failover",
 ]
 
 
