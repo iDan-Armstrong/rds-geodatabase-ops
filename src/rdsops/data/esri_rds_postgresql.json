@@ -68,7 +68,7 @@
         "15": "15.10",
         "16": "16.6"
       },
-      "postgis_blocked_note": "PostGIS issue 5978. Esri's 11.5 page lists 3.5.3 and 3.6.0.",
+      "postgis_blocked_note": "PostGIS issue 5978. Esri's 11.5 page lists 3.5.3 and 3.6.0 as not supported.",
       "checked": "2026-11-04",
       "sources": [
         "https://enterprise.arcgis.com/en/system-requirements/11.5/linux/databases-in-the-cloud.htm"
